@@ -49,6 +49,7 @@ export default function ClassSelector({ data, supabaseConfig }: { data: StudioDa
     if (!pending) {
       setSelected(mine.series);
       setRole(mine.role);
+      setAutoRenew(mine.autoRenew);
     }
   }, [restored, mine, storeKey]);
 
@@ -57,6 +58,11 @@ export default function ClassSelector({ data, supabaseConfig }: { data: StudioDa
       localStorage.setItem(storeKey, JSON.stringify({ selected: next, role: nextRole }));
     } catch {}
   }
+
+  // Renovación: el estudio decide; si deja elegir, por defecto automática
+  const mode = studio.renewal_mode ?? "choice";
+  const [autoRenew, setAutoRenew] = useState(mode !== "manual");
+  const effectiveAuto = mode === "auto" ? true : mode === "manual" ? false : autoRenew;
 
   const [step, setStep] = useState<"choose" | "email" | "sent" | "done">("choose");
   const [emailInput, setEmailInput] = useState("");
@@ -75,7 +81,7 @@ export default function ClassSelector({ data, supabaseConfig }: { data: StudioDa
       return;
     }
     setBusy(true);
-    const err = await account.save(selected, role);
+    const err = await account.save(selected, role, effectiveAuto);
     setBusy(false);
     if (err) {
       setError(err);
@@ -103,6 +109,7 @@ export default function ClassSelector({ data, supabaseConfig }: { data: StudioDa
   const changed =
     !account.mine ||
     account.mine.role !== role ||
+    account.mine.autoRenew !== effectiveAuto ||
     account.mine.series.length !== selected.length ||
     selected.some((id) => !account.mine?.series.includes(id));
 
@@ -333,6 +340,49 @@ export default function ClassSelector({ data, supabaseConfig }: { data: StudioDa
           <div className="-mt-3 text-right text-xs text-muted">al mes</div>
 
           {hint && <div className="rounded-xl bg-ok-soft px-3 py-2.5 text-sm font-semibold text-ok-text">{hint}</div>}
+
+          {n > 0 && mode === "choice" && (
+            <fieldset className="flex flex-col gap-2">
+              <legend className="mb-1 text-sm font-bold">¿Cómo quieres pagar?</legend>
+              {[
+                [true, "Cada mes automáticamente", "Se renueva solo con las mismas clases. Cancela o cambia cuando quieras."],
+                [false, "Solo este mes", "Válido un mes. El mes que viene eliges tus clases de nuevo."],
+              ].map(([value, title, help]) => (
+                <label
+                  key={String(value)}
+                  className={`flex cursor-pointer gap-3 rounded-xl border p-3 ${
+                    autoRenew === value ? "border-2 border-accent bg-accent-soft" : "border-line"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="renewal"
+                    checked={autoRenew === value}
+                    onChange={() => setAutoRenew(value as boolean)}
+                    className="mt-1 h-4 w-4 accent-accent"
+                  />
+                  <span>
+                    <span className="block text-sm font-bold">{title as string}</span>
+                    <span className="block text-xs text-muted">{help as string}</span>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+          )}
+          {n > 0 && mode === "auto" && (
+            <p className="text-xs leading-relaxed text-muted">Se renueva automáticamente cada mes. Cancela o cambia cuando quieras.</p>
+          )}
+          {n > 0 && mode === "manual" && (
+            <p className="text-xs leading-relaxed text-muted">Válido un mes. El mes que viene eliges tus clases de nuevo.</p>
+          )}
+
+          {account.mine && !changed && step !== "done" && (
+            <p className="rounded-xl bg-paper px-3 py-2.5 text-sm">
+              {account.mine.autoRenew
+                ? "Tu abono se renueva automáticamente cada mes."
+                : `Tu abono es válido hasta el ${account.mine.endsOn ? new Date(account.mine.endsOn).toLocaleDateString("es-ES", { day: "numeric", month: "long" }) : "final del mes"}.`}
+            </p>
+          )}
 
           {step === "done" && !changed ? (
             <div className="rounded-xl bg-ok-soft px-3 py-3 text-sm font-semibold text-ok-text">

@@ -6,6 +6,7 @@ export type Studio = {
   slug: string;
   currency: string;
   cancel_hours: number;
+  renewal_mode: "auto" | "manual" | "choice";
 };
 
 export type ClassSeries = {

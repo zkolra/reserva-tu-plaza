@@ -32,7 +32,7 @@ export async function loadStudio(slug: string): Promise<StudioData | null> {
   try {
     const res = await supabase
       .from("studios")
-      .select("id, name, slug, currency, cancel_hours")
+      .select("id, name, slug, currency, cancel_hours, renewal_mode")
       .eq("slug", slug)
       .maybeSingle();
     if (res.error) return demo(slug, `error de Supabase: ${res.error.message}`);

@@ -6,7 +6,7 @@ import type { DanceRole } from "./types";
 
 export type SupabaseConfig = { url: string; key: string } | null;
 
-export type MyMembership = { id: string; series: string[]; role: DanceRole };
+export type MyMembership = { id: string; series: string[]; role: DanceRole; autoRenew: boolean; endsOn: string | null };
 
 let browserClient: SupabaseClient | null = null;
 export function getBrowserClient(cfg: NonNullable<SupabaseConfig>) {
@@ -25,7 +25,7 @@ export function useAccount(cfg: SupabaseConfig, studioId: string) {
     if (!sb) return;
     const { data } = await sb
       .from("memberships")
-      .select("id, membership_series(series_id, role)")
+      .select("id, auto_renew, ends_on, membership_series(series_id, role)")
       .eq("studio_id", studioId)
       .eq("status", "active")
       .maybeSingle();
@@ -35,7 +35,13 @@ export function useAccount(cfg: SupabaseConfig, studioId: string) {
     }
     const rows = (data.membership_series ?? []) as { series_id: string; role: DanceRole }[];
     const withRole = rows.find((r) => r.role !== "none");
-    setMine({ id: data.id, series: rows.map((r) => r.series_id), role: withRole?.role ?? "follower" });
+    setMine({
+      id: data.id,
+      series: rows.map((r) => r.series_id),
+      role: withRole?.role ?? "follower",
+      autoRenew: data.auto_renew,
+      endsOn: data.ends_on,
+    });
   }, [sb, studioId]);
 
   useEffect(() => {
@@ -69,12 +75,13 @@ export function useAccount(cfg: SupabaseConfig, studioId: string) {
     return error ? error.message : null;
   }
 
-  async function save(seriesIds: string[], role: DanceRole) {
+  async function save(seriesIds: string[], role: DanceRole, autoRenew: boolean) {
     if (!sb) return "La base de datos no está conectada.";
     const { error } = await sb.rpc("create_membership", {
       p_studio: studioId,
       p_series: seriesIds,
       p_role: role === "none" ? "follower" : role,
+      p_auto_renew: autoRenew,
     });
     if (error) return error.message;
     await loadMine();

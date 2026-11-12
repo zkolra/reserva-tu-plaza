@@ -12,7 +12,14 @@ const DAYS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "
 const hhmm = (t: string) => t.slice(0, 5);
 const ROLE_LABEL: Record<string, string> = { leader: "Leader", follower: "Follower", none: "—" };
 
-type Studio = { id: string; name: string; slug: string; currency: string; cancel_hours: number };
+type Studio = {
+  id: string;
+  name: string;
+  slug: string;
+  currency: string;
+  cancel_hours: number;
+  renewal_mode: "auto" | "manual" | "choice";
+};
 type Series = {
   id: string;
   name: string;
@@ -48,7 +55,7 @@ export default function AdminStudio({ cfg, slug }: { cfg: SupabaseConfig; slug: 
   useEffect(() => {
     if (!sb || !userId) return;
     (async () => {
-      const { data: s } = await sb.from("studios").select("id, name, slug, currency, cancel_hours").eq("slug", slug).maybeSingle();
+      const { data: s } = await sb.from("studios").select("id, name, slug, currency, cancel_hours, renewal_mode").eq("slug", slug).maybeSingle();
       if (!s) {
         setAllowed(false);
         return;
@@ -134,6 +141,8 @@ type MembershipRow = {
   id: string;
   user_id: string;
   starts_on: string;
+  auto_renew: boolean;
+  ends_on: string | null;
   plans: { name: string; price_cents: number } | null;
   membership_series: { role: string; class_series: { name: string; weekday: number; start_time: string } | null }[];
 };
@@ -147,7 +156,7 @@ function Students({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
     (async () => {
       const { data, error } = await sb
         .from("memberships")
-        .select("id, user_id, starts_on, plans(name, price_cents), membership_series(role, class_series(name, weekday, start_time))")
+        .select("id, user_id, starts_on, auto_renew, ends_on, plans(name, price_cents), membership_series(role, class_series(name, weekday, start_time))")
         .eq("studio_id", studio.id)
         .eq("status", "active")
         .order("created_at", { ascending: false });
@@ -179,13 +188,14 @@ function Students({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
         {rows && rows.length === 0 ? (
           <p className="p-2 text-muted">Todavía nadie tiene abono. Comparte el enlace de tu horario con tus alumnos.</p>
         ) : (
-          <table className="w-full min-w-[640px] border-collapse text-sm">
+          <table className="w-full min-w-[760px] border-collapse text-sm">
             <thead>
               <tr className="text-left text-xs text-muted">
                 <th className="py-2 pr-3 font-semibold">Alumno</th>
                 <th className="px-3 py-2 font-semibold">Clases</th>
                 <th className="px-3 py-2 font-semibold">Rol</th>
                 <th className="px-3 py-2 font-semibold">Abono</th>
+                <th className="px-3 py-2 font-semibold">Pago</th>
                 <th className="py-2 pl-3 text-right font-semibold">Precio / mes</th>
               </tr>
             </thead>
@@ -206,6 +216,13 @@ function Students({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
                     </td>
                     <td className="px-3 py-3">{ROLE_LABEL[role]}</td>
                     <td className="px-3 py-3">{r.plans?.name}</td>
+                    <td className="px-3 py-3">
+                      {r.auto_renew
+                        ? "Automático cada mes"
+                        : r.ends_on
+                          ? `Hasta el ${new Date(r.ends_on).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}`
+                          : "Mes a mes"}
+                    </td>
                     <td className="py-3 pl-3 text-right font-bold">
                       {r.plans ? formatPrice(r.plans.price_cents, studio.currency) : "—"}
                     </td>
@@ -457,6 +474,8 @@ const KIND_LABEL: Record<string, string> = {
   pack: "Bono de clases",
   subscription: "Suscripción",
 };
+// Lo que se puede añadir ahora (la suscripción es una forma de renovar el abono, ver Ajustes)
+const ADDABLE = ["trial", "monthly_by_classes"];
 
 function Prices({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
   const [plans, setPlans] = useState<Plan[] | null>(null);
@@ -488,6 +507,20 @@ function Prices({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
     load();
   }
 
+  async function remove(p: Plan) {
+    if (!window.confirm(`¿Eliminar «${p.name}»? No se puede deshacer.`)) return;
+    setError(null);
+    const { error } = await sb.from("plans").delete().eq("id", p.id);
+    if (error) {
+      setError(
+        error.code === "23503"
+          ? `«${p.name}» ya lo usa algún alumno, así que no se puede eliminar. Desactívalo para que no aparezca en la web.`
+          : error.message,
+      );
+    }
+    load();
+  }
+
   async function add(kind: string) {
     const sort = Math.max(0, ...(plans ?? []).map((p) => p.sort)) + 1;
     const { error } = await sb.from("plans").insert({
@@ -513,16 +546,26 @@ function Prices({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
       {error && <ErrorBox text={error} />}
       <div className="flex flex-col gap-2">
         {(plans ?? []).map((p) => (
-          <PlanRow key={p.id} plan={p} currency={studio.currency} saved={saved === p.id} onSave={(patch) => update(p, patch)} />
+          <PlanRow
+            key={p.id}
+            plan={p}
+            currency={studio.currency}
+            saved={saved === p.id}
+            onSave={(patch) => update(p, patch)}
+            onDelete={() => remove(p)}
+          />
         ))}
       </div>
       <div className="flex flex-wrap gap-2">
-        {Object.entries(KIND_LABEL).map(([kind, label]) => (
+        {ADDABLE.map((kind) => (
           <button key={kind} type="button" onClick={() => add(kind)} className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-semibold">
-            + {label}
+            + {KIND_LABEL[kind]}
           </button>
         ))}
       </div>
+      <p className="text-xs text-muted">
+        La suscripción (cobro automático cada mes) se configura en Ajustes → Renovación del abono.
+      </p>
     </section>
   );
 }
@@ -532,11 +575,13 @@ function PlanRow({
   currency,
   saved,
   onSave,
+  onDelete,
 }: {
   plan: Plan;
   currency: string;
   saved: boolean;
   onSave: (patch: Partial<Plan>) => void;
+  onDelete: () => void;
 }) {
   const [name, setName] = useState(plan.name);
   const [price, setPrice] = useState(String(plan.price_cents / 100));
@@ -554,7 +599,18 @@ function PlanRow({
       }}
       className={`flex flex-wrap items-end gap-3 rounded-2xl bg-white p-4 ${plan.active ? "" : "opacity-55"}`}
     >
-      <div className="w-full text-xs font-bold text-muted">{KIND_LABEL[plan.kind]}</div>
+      <div className="flex w-full items-center justify-between text-xs font-bold text-muted">
+        {KIND_LABEL[plan.kind]}
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label={`Eliminar ${plan.name}`}
+          title="Eliminar"
+          className="-my-2 flex h-9 w-9 items-center justify-center rounded-lg text-base text-muted hover:bg-accent-soft hover:text-accent"
+        >
+          ✕
+        </button>
+      </div>
       <Field label="Nombre">
         <input value={name} onChange={(e) => setName(e.target.value)} className={`${inputCls} w-56`} />
       </Field>
@@ -578,6 +634,12 @@ function PlanRow({
 }
 
 /* ───────────────────────── Ajustes ───────────────────────── */
+
+const RENEWAL: [Studio["renewal_mode"], string, string][] = [
+  ["choice", "El alumno elige", "Al pagar, cada alumno decide: cada mes automáticamente o solo este mes."],
+  ["auto", "Solo suscripción automática", "Se cobra cada mes con las mismas clases hasta que el alumno cancele."],
+  ["manual", "Solo pago mes a mes", "El abono vale un mes; el alumno vuelve a elegir y pagar cada mes."],
+];
 
 const MODULES: [string, string, string][] = [
   ["roles", "Plazas separadas Leader / Follower", "Para clases en pareja: el grupo se mantiene equilibrado."],
@@ -606,6 +668,15 @@ function Settings({ sb, studio, onSaved }: { sb: SupabaseClient; studio: Studio;
     setMods({ ...mods, [module]: enabled });
     const { error } = await sb.from("studio_modules").upsert({ studio_id: studio.id, module, enabled });
     if (error) setError(error.message);
+  }
+
+  const [renewal, setRenewal] = useState(studio.renewal_mode ?? "choice");
+  async function saveRenewal(value: Studio["renewal_mode"]) {
+    setRenewal(value);
+    setError(null);
+    const { error } = await sb.from("studios").update({ renewal_mode: value }).eq("id", studio.id);
+    if (error) setError(error.message);
+    else onSaved({ ...studio, renewal_mode: value });
   }
 
   async function saveStudio(e: React.FormEvent) {
@@ -637,6 +708,34 @@ function Settings({ sb, studio, onSaved }: { sb: SupabaseClient; studio: Studio;
           {msg ?? "Guardar"}
         </button>
       </form>
+
+      <fieldset className="rounded-2xl bg-white p-5">
+        <legend className="sr-only">Renovación del abono</legend>
+        <h2 className="text-base font-bold">Renovación del abono</h2>
+        <p className="mt-1 text-sm text-muted">Cómo pagan tus alumnos el abono mensual.</p>
+        <div className="mt-3 flex flex-col gap-2">
+          {RENEWAL.map(([value, title, help]) => (
+            <label
+              key={value}
+              className={`flex cursor-pointer gap-3 rounded-xl border p-3 ${
+                renewal === value ? "border-2 border-accent bg-accent-soft" : "border-line"
+              }`}
+            >
+              <input
+                type="radio"
+                name="renewal_mode"
+                checked={renewal === value}
+                onChange={() => saveRenewal(value)}
+                className="mt-1 h-4 w-4 accent-accent"
+              />
+              <span>
+                <span className="block text-sm font-bold">{title}</span>
+                <span className="block text-xs text-muted">{help}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
 
       <div className="rounded-2xl bg-white p-5">
         <h2 className="text-base font-bold">Módulos del estudio</h2>
