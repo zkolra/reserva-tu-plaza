@@ -22,11 +22,15 @@ export function useAccount(cfg: SupabaseConfig, studioId: string) {
   const [mine, setMine] = useState<MyMembership | null>(null);
   // null = no sabemos (sin sesión); true/false = respuesta de la base
   const [enrollmentDue, setEnrollmentDue] = useState<boolean | null>(null);
+  const [trialAvailable, setTrialAvailable] = useState<boolean | null>(null);
 
   const loadMine = useCallback(async () => {
     if (!sb) return;
     sb.rpc("enrollment_due", { p_studio: studioId }).then(({ data, error }) => {
       setEnrollmentDue(error ? null : Boolean(data));
+    });
+    sb.rpc("trial_available", { p_studio: studioId }).then(({ data, error }) => {
+      setTrialAvailable(error ? null : Boolean(data));
     });
     const { data } = await sb
       .from("memberships")
@@ -73,6 +77,7 @@ export function useAccount(cfg: SupabaseConfig, studioId: string) {
     else {
       setMine(null);
       setEnrollmentDue(null);
+      setTrialAvailable(null);
     }
   }, [email, loadMine]);
 
@@ -96,9 +101,22 @@ export function useAccount(cfg: SupabaseConfig, studioId: string) {
     return null;
   }
 
+  /** Reserva la clase de prueba; devuelve la fecha (AAAA-MM-DD) o un error. */
+  async function bookTrial(seriesId: string, role: DanceRole): Promise<{ date?: string; error?: string }> {
+    if (!sb) return { error: "La base de datos no está conectada." };
+    const { data, error } = await sb.rpc("book_trial", {
+      p_studio: studioId,
+      p_series: seriesId,
+      p_role: role === "none" ? "follower" : role,
+    });
+    if (error) return { error: error.message };
+    await loadMine();
+    return { date: data as string };
+  }
+
   async function signOut() {
     await sb?.auth.signOut();
   }
 
-  return { enabled: !!sb, ready, email, mine, enrollmentDue, sendLink, save, signOut };
+  return { enabled: !!sb, ready, email, mine, enrollmentDue, trialAvailable, sendLink, save, bookTrial, signOut };
 }
