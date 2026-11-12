@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { loadStudio } from "@/lib/supabase";
+import { supabaseConfig } from "@/lib/config";
 import ClassSelector from "./ClassSelector";
 
 export default function StudioSchedulePage({ params }: PageProps<"/[slug]">) {
@@ -9,13 +10,6 @@ export default function StudioSchedulePage({ params }: PageProps<"/[slug]">) {
       <StudioSchedule params={params} />
     </Suspense>
   );
-}
-
-// Se leen en cada petición: en Cloudflare las variables llegan en tiempo de ejecución.
-function supabaseConfig() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  return url && key ? { url, key } : null;
 }
 
 async function StudioSchedule({ params }: { params: Promise<{ slug: string }> }) {

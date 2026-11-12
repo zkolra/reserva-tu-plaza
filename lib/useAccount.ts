@@ -9,7 +9,7 @@ export type SupabaseConfig = { url: string; key: string } | null;
 export type MyMembership = { id: string; series: string[]; role: DanceRole };
 
 let browserClient: SupabaseClient | null = null;
-function getBrowserClient(cfg: NonNullable<SupabaseConfig>) {
+export function getBrowserClient(cfg: NonNullable<SupabaseConfig>) {
   if (!browserClient) browserClient = createClient(cfg.url, cfg.key);
   return browserClient;
 }
