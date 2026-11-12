@@ -46,6 +46,10 @@ export function useAccount(cfg: SupabaseConfig, studioId: string) {
     sb.auth.getSession().then(({ data }) => {
       setEmail(data.session?.user.email ?? null);
       setReady(true);
+      // Quitar el token del enlace del email de la barra de direcciones
+      if (window.location.hash.includes("access_token")) {
+        window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      }
     });
     const { data: sub } = sb.auth.onAuthStateChange((_event, session) => {
       setEmail(session?.user.email ?? null);
