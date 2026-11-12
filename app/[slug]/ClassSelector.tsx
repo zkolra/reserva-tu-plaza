@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { formatPrice, freeSpots, monthlyTiers, otherRoleSpots, tierFor } from "@/lib/pricing";
 import type { ClassSeries, DanceRole, StudioData } from "@/lib/types";
+import { useAccount, type SupabaseConfig } from "@/lib/useAccount";
 
 const DAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const hhmm = (t: string) => t.slice(0, 5);
@@ -12,11 +14,97 @@ function spotsText(n: number) {
   return n === 1 ? "Queda 1 plaza" : `${n} plazas libres`;
 }
 
-export default function ClassSelector({ data }: { data: StudioData }) {
+export default function ClassSelector({ data, supabaseConfig }: { data: StudioData; supabaseConfig: SupabaseConfig }) {
   const { studio, series, plans, availability, modules } = data;
   const rolesOn = modules.roles !== false && series.some((s) => s.uses_roles);
   const [role, setRole] = useState<DanceRole>("follower");
   const [selected, setSelected] = useState<string[]>([]);
+  const router = useRouter();
+  const account = useAccount(data.isDemo ? null : supabaseConfig, studio.id);
+  const mineIds = account.mine?.series ?? [];
+  const storeKey = `rtp:${studio.slug}:pending`;
+
+  // Selección pendiente (p. ej. al volver del enlace del email): se recupera una vez
+  const [restored, setRestored] = useState(false);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(storeKey);
+      if (raw) {
+        const saved = JSON.parse(raw) as { selected: string[]; role: DanceRole };
+        setSelected(saved.selected.filter((id) => series.some((s) => s.id === id)));
+        setRole(saved.role);
+      }
+    } catch {}
+    setRestored(true);
+  }, [storeKey, series]);
+
+  // Si no había nada pendiente, se muestra el abono que ya tiene
+  const mine = account.mine;
+  useEffect(() => {
+    if (!restored || !mine) return;
+    let pending = false;
+    try {
+      pending = !!localStorage.getItem(storeKey);
+    } catch {}
+    if (!pending) {
+      setSelected(mine.series);
+      setRole(mine.role);
+    }
+  }, [restored, mine, storeKey]);
+
+  function remember(next: string[], nextRole: DanceRole) {
+    try {
+      localStorage.setItem(storeKey, JSON.stringify({ selected: next, role: nextRole }));
+    } catch {}
+  }
+
+  const [step, setStep] = useState<"choose" | "email" | "sent" | "done">("choose");
+  const [emailInput, setEmailInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onContinue() {
+    setError(null);
+    if (!account.enabled) {
+      setError("Esto es una demo: conecta la base de datos para guardar reservas.");
+      return;
+    }
+    if (!account.email) {
+      remember(selected, role);
+      setStep("email");
+      return;
+    }
+    setBusy(true);
+    const err = await account.save(selected, role);
+    setBusy(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+    try {
+      localStorage.removeItem(storeKey);
+    } catch {}
+    setStep("done");
+    router.refresh();
+  }
+
+  async function onSendLink(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    const err = await account.sendLink(emailInput.trim());
+    setBusy(false);
+    if (err) setError(err);
+    else setStep("sent");
+  }
+
+  const isMine = (id: string) => mineIds.includes(id) && (account.mine?.role === role || !byIdSafe(id)?.uses_roles);
+  const byIdSafe = (id: string) => series.find((s) => s.id === id);
+  const changed =
+    !account.mine ||
+    account.mine.role !== role ||
+    account.mine.series.length !== selected.length ||
+    selected.some((id) => !account.mine?.series.includes(id));
 
   const days = useMemo(() => [...new Set(series.map((s) => s.weekday))].sort((a, b) => a - b), [series]);
   const times = useMemo(() => [...new Set(series.map((s) => hhmm(s.start_time)))].sort(), [series]);
@@ -27,11 +115,12 @@ export default function ClassSelector({ data }: { data: StudioData }) {
   const roleWord = role === "leader" ? "leader" : "follower";
 
   function toggle(s: ClassSeries) {
+    setStep("choose");
     if (selected.includes(s.id)) {
       setSelected(selected.filter((x) => x !== s.id));
       return;
     }
-    if (freeSpots(s, availability[s.id], role) <= 0) return;
+    if (freeSpots(s, availability[s.id], role) <= 0 && !isMine(s.id)) return;
     setSelected([...selected, s.id]);
   }
 
@@ -126,7 +215,7 @@ export default function ClassSelector({ data }: { data: StudioData }) {
                       );
                     }
 
-                    if (free <= 0) {
+                    if (free <= 0 && !isMine(s.id)) {
                       return (
                         <button
                           key={d}
@@ -160,8 +249,8 @@ export default function ClassSelector({ data }: { data: StudioData }) {
                           className={`mt-0.5 flex items-center gap-1.5 text-xs font-bold ${free <= 2 ? "text-few-text" : "text-ok-text"}`}
                         >
                           <Dot color={free <= 2 ? "bg-few" : "bg-ok"} />
-                          {spotsText(free)}
-                          {s.uses_roles && rolesOn ? ` (${roleWord})` : ""}
+                          {isMine(s.id) ? "Tu plaza está reservada" : spotsText(free)}
+                          {!isMine(s.id) && s.uses_roles && rolesOn ? ` (${roleWord})` : ""}
                         </span>
                         {s.uses_roles && rolesOn && (
                           <span className="text-[11px] text-muted">
@@ -245,14 +334,71 @@ export default function ClassSelector({ data }: { data: StudioData }) {
 
           {hint && <div className="rounded-xl bg-ok-soft px-3 py-2.5 text-sm font-semibold text-ok-text">{hint}</div>}
 
-          <button
-            type="button"
-            disabled={n === 0}
-            className="h-13 rounded-2xl bg-accent text-base font-bold text-white disabled:opacity-40"
-          >
-            Continuar al pago
-          </button>
+          {step === "done" && !changed ? (
+            <div className="rounded-xl bg-ok-soft px-3 py-3 text-sm font-semibold text-ok-text">
+              ¡Listo! Tu abono está guardado. Puedes volver aquí cuando quieras para cambiar de clases.
+            </div>
+          ) : step === "email" ? (
+            <form onSubmit={onSendLink} className="flex flex-col gap-2">
+              <label htmlFor="email" className="text-sm font-bold">
+                Tu email
+              </label>
+              <input
+                id="email"
+                type="email"
+                required
+                autoComplete="email"
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                placeholder="nombre@email.com"
+                className="h-12 rounded-xl border border-line px-3 text-base outline-none focus:border-ink"
+              />
+              <button
+                type="submit"
+                disabled={busy}
+                className="h-13 rounded-2xl bg-accent text-base font-bold text-white disabled:opacity-40"
+              >
+                {busy ? "Enviando…" : "Enviarme el enlace"}
+              </button>
+              <p className="text-xs leading-relaxed text-muted">
+                Te enviamos un enlace para entrar, sin contraseña. Tu selección se guarda mientras tanto.
+              </p>
+            </form>
+          ) : step === "sent" ? (
+            <div className="rounded-xl bg-paper px-3 py-3 text-sm leading-relaxed">
+              Te hemos enviado un enlace a <b>{emailInput}</b>. Ábrelo en este mismo dispositivo para confirmar tu abono.
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onContinue}
+              disabled={n === 0 || busy || !changed}
+              className="h-13 rounded-2xl bg-accent text-base font-bold text-white disabled:opacity-40"
+            >
+              {busy
+                ? "Guardando…"
+                : !account.email
+                  ? "Continuar"
+                  : account.mine
+                    ? changed
+                      ? "Guardar cambios"
+                      : "Este es tu abono actual"
+                    : "Confirmar abono"}
+            </button>
+          )}
+
+          {error && <p className="rounded-xl bg-accent-soft px-3 py-2 text-sm font-semibold text-accent">{error}</p>}
+
+          {account.email && (
+            <p className="text-xs text-muted">
+              Has entrado como {account.email} ·{" "}
+              <button type="button" onClick={account.signOut} className="underline">
+                Salir
+              </button>
+            </p>
+          )}
           <p className="text-xs leading-relaxed text-muted">
+            El pago online llegará pronto; de momento el estudio te indicará cómo pagar.{" "}
             Puedes cambiar de clases o pausar tu abono desde tu cuenta, sin escribir a nadie. Cancelación gratis hasta{" "}
             {studio.cancel_hours} h antes de cada clase.
           </p>

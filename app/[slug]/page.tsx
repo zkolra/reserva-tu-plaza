@@ -11,6 +11,13 @@ export default function StudioSchedulePage({ params }: PageProps<"/[slug]">) {
   );
 }
 
+// Se leen en cada petición: en Cloudflare las variables llegan en tiempo de ejecución.
+function supabaseConfig() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  return url && key ? { url, key } : null;
+}
+
 async function StudioSchedule({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const data = await loadStudio(slug);
@@ -26,7 +33,7 @@ async function StudioSchedule({ params }: { params: Promise<{ slug: string }> })
           <div className="font-bold">{data.studio.name}</div>
         </div>
       </header>
-      <ClassSelector data={data} />
+      <ClassSelector data={data} supabaseConfig={supabaseConfig()} />
     </>
   );
 }
