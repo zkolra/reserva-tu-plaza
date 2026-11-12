@@ -8,6 +8,12 @@
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
+  // Valores públicos (la clave publishable también se ve en el navegador).
+  // La clave secreta NUNCA va aquí: se añade como secret en Cloudflare.
+  "vars": {
+    "NEXT_PUBLIC_SUPABASE_URL": "https://cwklgplnvfgzijvazhjn.supabase.co",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_PzRiGSpndVaZbRhmx07nVg_fBOxReq4"
+  },
   "services": [
     {
       "binding": "WORKER_SELF_REFERENCE",
