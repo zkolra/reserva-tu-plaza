@@ -24,7 +24,7 @@ export default function ClassSelector({ data }: { data: StudioData }) {
   const trial = plans.find((p) => p.kind === "trial");
 
   const byId = (id: string) => series.find((s) => s.id === id) as ClassSeries;
-  const roleWord = role === "leader" ? "líder" : "seguidor/a";
+  const roleWord = role === "leader" ? "leader" : "follower";
 
   function toggle(s: ClassSeries) {
     if (selected.includes(s.id)) {
@@ -66,7 +66,7 @@ export default function ClassSelector({ data }: { data: StudioData }) {
                   role === r ? "bg-ink text-white" : "border border-line bg-white text-ink"
                 }`}
               >
-                {r === "follower" ? "Seguidor/a" : "Líder"}
+                {r === "follower" ? "Follower" : "Leader"}
               </button>
             ))}
           </div>
@@ -165,7 +165,7 @@ export default function ClassSelector({ data }: { data: StudioData }) {
                         </span>
                         {s.uses_roles && rolesOn && (
                           <span className="text-[11px] text-muted">
-                            {role === "follower" ? "Líderes" : "Seguidores"}: {other > 0 ? `${other} libres` : "completo"}
+                            {role === "follower" ? "Leaders" : "Followers"}: {other > 0 ? `${other} libres` : "completo"}
                           </span>
                         )}
                       </button>

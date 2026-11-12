@@ -4,7 +4,7 @@ import type { Availability, ClassSeries, Plan, StudioData } from "./types";
 // o cuando el estudio pedido es "demo" y aún no existe en Supabase.
 
 type Row = [string, number, string, string, string, string, boolean, number, number, number, number];
-// id, día, hora, nombre, nivel, profes, roles, cap (o cap líderes), cap seguidores, ocupadas (o líderes), ocupadas seguidores
+// id, día, hora, nombre, nivel, profes, roles, cap (o cap leaders), cap followers, ocupadas (o leaders), ocupadas followers
 const rows: Row[] = [
   ["c1", 1, "19:00", "Salsa en pareja", "Básico", "Ana y Diego", true, 6, 6, 5, 6],
   ["c2", 1, "20:00", "Salsa Footwork", "Intermedio", "Ana", false, 16, 0, 10, 0],
