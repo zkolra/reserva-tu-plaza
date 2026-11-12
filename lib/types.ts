@@ -46,4 +46,6 @@ export type StudioData = {
   plans: Plan[];
   availability: Record<string, Availability>;
   isDemo: boolean;
+  /** Por qué se muestran datos de ejemplo en lugar de la base (para diagnosticar). */
+  demoReason?: string;
 };

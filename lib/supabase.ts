@@ -2,22 +2,46 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { demoData } from "./demo";
 import type { Availability, StudioData } from "./types";
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+let client: SupabaseClient | null = null;
 
-export const supabase: SupabaseClient | null = url && key ? createClient(url, key) : null;
+/**
+ * El cliente se crea en la primera petición, no al cargar el módulo:
+ * en Cloudflare Workers las variables de entorno llegan con la petición.
+ */
+export function getSupabase(): SupabaseClient | null {
+  if (client) return client;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  client = createClient(url, key, { auth: { persistSession: false } });
+  return client;
+}
+
+function demo(slug: string, reason: string): StudioData | null {
+  if (slug !== "demo") return null;
+  console.warn(`[loadStudio] datos de ejemplo: ${reason}`);
+  return { ...demoData, demoReason: reason };
+}
 
 /** Carga todo lo que necesita el horario público de un estudio. */
 export async function loadStudio(slug: string): Promise<StudioData | null> {
-  if (!supabase) return slug === "demo" ? demoData : null;
+  const supabase = getSupabase();
+  if (!supabase) return demo(slug, "faltan las variables NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY");
 
-  const { data: studio } = await supabase
-    .from("studios")
-    .select("id, name, slug, currency, cancel_hours")
-    .eq("slug", slug)
-    .maybeSingle();
+  let studio;
+  try {
+    const res = await supabase
+      .from("studios")
+      .select("id, name, slug, currency, cancel_hours")
+      .eq("slug", slug)
+      .maybeSingle();
+    if (res.error) return demo(slug, `error de Supabase: ${res.error.message}`);
+    studio = res.data;
+  } catch (e) {
+    return demo(slug, `no se pudo conectar con Supabase: ${e instanceof Error ? e.message : String(e)}`);
+  }
 
-  if (!studio) return slug === "demo" ? demoData : null;
+  if (!studio) return demo(slug, `el estudio «${slug}» no está en la base (¿se ejecutó seed.sql?)`);
 
   const [modules, series, plans, availability] = await Promise.all([
     supabase.from("studio_modules").select("module, enabled").eq("studio_id", studio.id),
@@ -34,6 +58,9 @@ export async function loadStudio(slug: string): Promise<StudioData | null> {
       .order("sort"),
     supabase.rpc("series_availability", { p_studio: studio.id }),
   ]);
+
+  const firstError = [modules, series, plans, availability].find((r) => r.error)?.error;
+  if (firstError) return demo(slug, `error de Supabase: ${firstError.message}`);
 
   return {
     studio,

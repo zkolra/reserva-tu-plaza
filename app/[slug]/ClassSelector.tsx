@@ -256,7 +256,11 @@ export default function ClassSelector({ data }: { data: StudioData }) {
             Puedes cambiar de clases o pausar tu abono desde tu cuenta, sin escribir a nadie. Cancelación gratis hasta{" "}
             {studio.cancel_hours} h antes de cada clase.
           </p>
-          {data.isDemo && <p className="text-xs text-muted">Datos de ejemplo.</p>}
+          {data.isDemo && (
+            <p className="text-xs text-muted">
+              Datos de ejemplo{data.demoReason ? ` — ${data.demoReason}` : ""}.
+            </p>
+          )}
         </aside>
       </div>
     </div>
