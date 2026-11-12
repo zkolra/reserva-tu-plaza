@@ -63,6 +63,8 @@ export default function ClassSelector({ data, supabaseConfig }: { data: StudioDa
   const mode = studio.renewal_mode ?? "choice";
   const [autoRenew, setAutoRenew] = useState(mode !== "manual");
   const effectiveAuto = mode === "auto" ? true : mode === "manual" ? false : autoRenew;
+  // Sin sesión no sabemos si ya es alumno: se muestra la matrícula y se descuenta al entrar
+  const feeDue = studio.enrollment_fee_cents > 0 && (account.mine ? false : (account.enrollmentDue ?? true));
 
   const [step, setStep] = useState<"choose" | "email" | "sent" | "done">("choose");
   const [emailInput, setEmailInput] = useState("");
@@ -338,6 +340,34 @@ export default function ClassSelector({ data, supabaseConfig }: { data: StudioDa
             </span>
           </div>
           <div className="-mt-3 text-right text-xs text-muted">al mes</div>
+
+          {n > 0 && studio.enrollment_fee_cents > 0 && (
+            <div className="flex flex-col gap-2 border-t border-line pt-3">
+              <div className="flex items-baseline justify-between text-sm">
+                <span className={feeDue ? "font-semibold" : "text-muted"}>Matrícula (pago único)</span>
+                <span className={feeDue ? "font-bold" : "text-muted line-through"}>
+                  {formatPrice(studio.enrollment_fee_cents, studio.currency)}
+                </span>
+              </div>
+              {feeDue ? (
+                <>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm font-bold">Hoy pagas</span>
+                    <span className="text-xl font-bold">
+                      {formatPrice((tier?.plan.price_cents ?? 0) + studio.enrollment_fee_cents, studio.currency)}
+                    </span>
+                  </div>
+                  {!account.email && account.enabled && (
+                    <p className="text-xs leading-relaxed text-muted">
+                      ¿Ya eres alumno/a? Entra con tu email al continuar y, si tu matrícula sigue vigente, se descuenta.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs font-semibold text-ok-text">Ya eres alumno/a: no pagas matrícula.</p>
+              )}
+            </div>
+          )}
 
           {hint && <div className="rounded-xl bg-ok-soft px-3 py-2.5 text-sm font-semibold text-ok-text">{hint}</div>}
 

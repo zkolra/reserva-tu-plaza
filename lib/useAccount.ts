@@ -20,9 +20,14 @@ export function useAccount(cfg: SupabaseConfig, studioId: string) {
   const [email, setEmail] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [mine, setMine] = useState<MyMembership | null>(null);
+  // null = no sabemos (sin sesión); true/false = respuesta de la base
+  const [enrollmentDue, setEnrollmentDue] = useState<boolean | null>(null);
 
   const loadMine = useCallback(async () => {
     if (!sb) return;
+    sb.rpc("enrollment_due", { p_studio: studioId }).then(({ data, error }) => {
+      setEnrollmentDue(error ? null : Boolean(data));
+    });
     const { data } = await sb
       .from("memberships")
       .select("id, auto_renew, ends_on, membership_series(series_id, role)")
@@ -65,7 +70,10 @@ export function useAccount(cfg: SupabaseConfig, studioId: string) {
 
   useEffect(() => {
     if (email) loadMine();
-    else setMine(null);
+    else {
+      setMine(null);
+      setEnrollmentDue(null);
+    }
   }, [email, loadMine]);
 
   async function sendLink(address: string) {
@@ -92,5 +100,5 @@ export function useAccount(cfg: SupabaseConfig, studioId: string) {
     await sb?.auth.signOut();
   }
 
-  return { enabled: !!sb, ready, email, mine, sendLink, save, signOut };
+  return { enabled: !!sb, ready, email, mine, enrollmentDue, sendLink, save, signOut };
 }

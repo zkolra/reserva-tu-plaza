@@ -7,6 +7,8 @@ export type Studio = {
   currency: string;
   cancel_hours: number;
   renewal_mode: "auto" | "manual" | "choice";
+  enrollment_fee_cents: number;
+  enrollment_valid_days: number;
 };
 
 export type ClassSeries = {

@@ -19,6 +19,8 @@ type Studio = {
   currency: string;
   cancel_hours: number;
   renewal_mode: "auto" | "manual" | "choice";
+  enrollment_fee_cents: number;
+  enrollment_valid_days: number;
 };
 type Series = {
   id: string;
@@ -55,7 +57,7 @@ export default function AdminStudio({ cfg, slug }: { cfg: SupabaseConfig; slug: 
   useEffect(() => {
     if (!sb || !userId) return;
     (async () => {
-      const { data: s } = await sb.from("studios").select("id, name, slug, currency, cancel_hours, renewal_mode").eq("slug", slug).maybeSingle();
+      const { data: s } = await sb.from("studios").select("id, name, slug, currency, cancel_hours, renewal_mode, enrollment_fee_cents, enrollment_valid_days").eq("slug", slug).maybeSingle();
       if (!s) {
         setAllowed(false);
         return;
@@ -143,6 +145,7 @@ type MembershipRow = {
   starts_on: string;
   auto_renew: boolean;
   ends_on: string | null;
+  enrollment_fee_cents: number;
   plans: { name: string; price_cents: number } | null;
   membership_series: { role: string; class_series: { name: string; weekday: number; start_time: string } | null }[];
 };
@@ -156,7 +159,7 @@ function Students({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
     (async () => {
       const { data, error } = await sb
         .from("memberships")
-        .select("id, user_id, starts_on, auto_renew, ends_on, plans(name, price_cents), membership_series(role, class_series(name, weekday, start_time))")
+        .select("id, user_id, starts_on, auto_renew, ends_on, enrollment_fee_cents, plans(name, price_cents), membership_series(role, class_series(name, weekday, start_time))")
         .eq("studio_id", studio.id)
         .eq("status", "active")
         .order("created_at", { ascending: false });
@@ -225,6 +228,11 @@ function Students({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
                     </td>
                     <td className="py-3 pl-3 text-right font-bold">
                       {r.plans ? formatPrice(r.plans.price_cents, studio.currency) : "—"}
+                      {r.enrollment_fee_cents > 0 && (
+                        <div className="text-xs font-semibold text-muted">
+                          + matrícula {formatPrice(r.enrollment_fee_cents, studio.currency)}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );
@@ -670,6 +678,25 @@ function Settings({ sb, studio, onSaved }: { sb: SupabaseClient; studio: Studio;
     if (error) setError(error.message);
   }
 
+  const [fee, setFee] = useState(String((studio.enrollment_fee_cents ?? 0) / 100));
+  const [feeDays, setFeeDays] = useState(String(studio.enrollment_valid_days ?? 365));
+  const [feeMsg, setFeeMsg] = useState<string | null>(null);
+  async function saveFee(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const patch = {
+      enrollment_fee_cents: Math.round(Number(fee.replace(",", ".") || 0) * 100),
+      enrollment_valid_days: Number(feeDays) || 365,
+    };
+    const { error } = await sb.from("studios").update(patch).eq("id", studio.id);
+    if (error) setError(error.message);
+    else {
+      onSaved({ ...studio, ...patch });
+      setFeeMsg("Guardado ✓");
+      setTimeout(() => setFeeMsg(null), 1500);
+    }
+  }
+
   const [renewal, setRenewal] = useState(studio.renewal_mode ?? "choice");
   async function saveRenewal(value: Studio["renewal_mode"]) {
     setRenewal(value);
@@ -707,6 +734,27 @@ function Settings({ sb, studio, onSaved }: { sb: SupabaseClient; studio: Studio;
         <button type="submit" className="h-11 rounded-xl bg-ink px-4 text-sm font-bold text-white">
           {msg ?? "Guardar"}
         </button>
+      </form>
+
+      <form onSubmit={saveFee} className="flex flex-col gap-3 rounded-2xl bg-white p-5">
+        <div>
+          <h2 className="text-base font-bold">Matrícula</h2>
+          <p className="mt-1 text-sm text-muted">
+            Pago único con el primer abono. Sigue válida mientras el alumno tenga abono; si pasa más tiempo del indicado
+            sin abono, al volver la paga de nuevo. Pon 0 si no cobras matrícula.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <Field label={`Importe (${studio.currency})`}>
+            <input inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} className={`${inputCls} w-28`} />
+          </Field>
+          <Field label="Caduca tras (días sin abono)">
+            <input type="number" min={1} value={feeDays} onChange={(e) => setFeeDays(e.target.value)} className={`${inputCls} w-28`} />
+          </Field>
+          <button type="submit" className="h-11 rounded-xl bg-ink px-4 text-sm font-bold text-white">
+            {feeMsg ?? "Guardar"}
+          </button>
+        </div>
       </form>
 
       <fieldset className="rounded-2xl bg-white p-5">
