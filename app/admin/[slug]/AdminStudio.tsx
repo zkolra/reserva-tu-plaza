@@ -66,14 +66,10 @@ export default function AdminStudio({ cfg, slug }: { cfg: SupabaseConfig; slug: 
         setAllowed(false);
         return;
       }
-      const { data: staff } = await sb
-        .from("studio_staff")
-        .select("role")
-        .eq("studio_id", s.id)
-        .eq("user_id", userId)
-        .maybeSingle();
+      // Equipo de la escuela o superadmin de la plataforma
+      const { data: ok } = await sb.rpc("is_studio_staff", { sid: s.id });
       setStudio(s);
-      setAllowed(!!staff);
+      setAllowed(!!ok);
     })();
   }, [sb, userId, slug]);
 
@@ -309,9 +305,10 @@ function Classes({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
   const [taken, setTaken] = useState<Record<string, Taken>>({});
   const [editing, setEditing] = useState<string | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [rolesEnabled, setRolesEnabled] = useState(false);
 
   const load = useCallback(async () => {
-    const [s, t] = await Promise.all([
+    const [s, t, m] = await Promise.all([
       sb
         .from("class_series")
         .select("id, name, level, teachers, weekday, start_time, duration_min, uses_roles, capacity, capacity_leaders, capacity_followers, active")
@@ -319,7 +316,9 @@ function Classes({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
         .order("weekday")
         .order("start_time"),
       sb.rpc("series_availability", { p_studio: studio.id }),
+      sb.from("studio_modules").select("enabled").eq("studio_id", studio.id).eq("module", "roles").maybeSingle(),
     ]);
+    setRolesEnabled(!!m.data?.enabled);
     if (s.error) setError(s.error.message);
     setList((s.data ?? []) as Series[]);
     setTaken(Object.fromEntries(((t.data ?? []) as Taken[]).map((x) => [x.series_id, x])));
@@ -368,7 +367,9 @@ function Classes({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
         </button>
       </div>
       {error && <ErrorBox text={error} />}
-      {editing === "new" && <SeriesForm initial={emptySeries()} onSave={(v) => save(v)} onCancel={() => setEditing(null)} />}
+      {editing === "new" && (
+        <SeriesForm initial={emptySeries()} rolesEnabled={rolesEnabled} onSave={(v) => save(v)} onCancel={() => setEditing(null)} />
+      )}
 
       <div className="flex flex-col gap-2">
         {(list ?? []).map((s) =>
@@ -376,6 +377,7 @@ function Classes({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
             <SeriesForm
               key={s.id}
               initial={{ ...s, start_time: hhmm(s.start_time) }}
+              rolesEnabled={rolesEnabled}
               onSave={(v) => save(v, s.id)}
               onCancel={() => setEditing(null)}
             />
@@ -443,10 +445,12 @@ function Occupancy({ s, t }: { s: Series; t?: Taken }) {
 
 function SeriesForm({
   initial,
+  rolesEnabled,
   onSave,
   onCancel,
 }: {
   initial: Omit<Series, "id">;
+  rolesEnabled: boolean;
   onSave: (v: Omit<Series, "id">) => void;
   onCancel: () => void;
 }) {
@@ -486,10 +490,12 @@ function SeriesForm({
       <Field label="Duración (min)">
         <input type="number" min={15} step={5} value={v.duration_min} onChange={(e) => set("duration_min", Number(e.target.value))} className={inputCls} />
       </Field>
-      <label className="flex items-center gap-2 self-end pb-3 text-sm font-semibold">
-        <input type="checkbox" checked={v.uses_roles} onChange={(e) => set("uses_roles", e.target.checked)} className="h-5 w-5" />
-        Plazas separadas Leader / Follower
-      </label>
+      {(rolesEnabled || v.uses_roles) && (
+        <label className="flex items-center gap-2 self-end pb-3 text-sm font-semibold">
+          <input type="checkbox" checked={v.uses_roles} onChange={(e) => set("uses_roles", e.target.checked)} className="h-5 w-5" />
+          Plazas separadas Leader / Follower
+        </label>
+      )}
       {v.uses_roles ? (
         <>
           <Field label="Plazas leaders">

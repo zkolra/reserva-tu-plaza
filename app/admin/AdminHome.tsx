@@ -11,9 +11,11 @@ type Row = { role: string; studios: { name: string; slug: string } | null };
 export default function AdminHome({ cfg }: { cfg: SupabaseConfig }) {
   const { sb, userId, email, ready } = useSession(cfg);
   const [rows, setRows] = useState<Row[] | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     if (!sb || !userId) return;
+    sb.rpc("is_platform_admin").then(({ data }) => setIsAdmin(!!data));
     sb.from("studio_staff")
       .select("role, studios(name, slug)")
       .eq("user_id", userId)
@@ -33,6 +35,15 @@ export default function AdminHome({ cfg }: { cfg: SupabaseConfig }) {
           Salir
         </button>
       </p>
+      {isAdmin && (
+        <Link
+          href="/superadmin"
+          className="mt-6 flex items-center justify-between rounded-2xl bg-ink p-5 font-bold text-white"
+        >
+          Superadmin: todas las escuelas
+          <span className="text-sm font-semibold text-white/75">Abrir →</span>
+        </Link>
+      )}
       {rows === null ? (
         <p className="mt-8 text-muted">Cargando…</p>
       ) : rows.length === 0 ? (
