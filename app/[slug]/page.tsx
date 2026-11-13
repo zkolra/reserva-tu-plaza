@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { loadStudio } from "@/lib/supabase";
 import { supabaseConfig } from "@/lib/config";
 import ClassSelector from "./ClassSelector";
+import StudioLogo from "@/components/StudioLogo";
+import { themeVars } from "@/lib/theme";
 
 export default function StudioSchedulePage({ params }: PageProps<"/[slug]">) {
   return (
@@ -18,16 +20,14 @@ async function StudioSchedule({ params }: { params: Promise<{ slug: string }> })
   if (!data) notFound();
 
   return (
-    <>
+    <div style={themeVars(data.studio.accent_color)} className="flex flex-1 flex-col">
       <header className="bg-ink text-white">
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-4 sm:px-6">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent font-display text-sm font-bold">
-            {data.studio.name.slice(0, 1)}
-          </div>
+          <StudioLogo name={data.studio.name} logoUrl={data.studio.logo_url} />
           <div className="font-bold">{data.studio.name}</div>
         </div>
       </header>
       <ClassSelector data={data} supabaseConfig={supabaseConfig()} />
-    </>
+    </div>
   );
 }

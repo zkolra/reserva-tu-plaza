@@ -9,7 +9,7 @@ export default function Home() {
       </p>
       <Link
         href="/demo"
-        className="mt-8 inline-flex h-13 w-fit items-center rounded-2xl bg-accent px-6 font-bold text-white"
+        className="mt-8 inline-flex h-13 w-fit items-center rounded-2xl bg-accent px-6 font-bold text-on-accent"
       >
         Ver el horario de ejemplo
       </Link>

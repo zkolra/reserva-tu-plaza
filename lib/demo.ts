@@ -57,7 +57,7 @@ const plans: Plan[] = [
 ];
 
 export const demoData: StudioData = {
-  studio: { id: "demo", name: "Estudio de baile (demo)", slug: "demo", currency: "EUR", cancel_hours: 12, renewal_mode: "choice", enrollment_fee_cents: 2000, enrollment_valid_days: 365 },
+  studio: { id: "demo", name: "Estudio de baile (demo)", slug: "demo", currency: "EUR", cancel_hours: 12, renewal_mode: "choice", enrollment_fee_cents: 2000, enrollment_valid_days: 365, accent_color: "#b8235a", logo_url: null },
   modules: { classes: true, payments: true, roles: true, waitlist: true },
   series,
   plans,

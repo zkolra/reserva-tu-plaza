@@ -269,7 +269,7 @@ export default function ClassSelector({
               type="button"
               aria-pressed={purpose === value}
               onClick={() => switchPurpose(value)}
-              className={`h-11 rounded-xl px-4 text-sm font-bold ${purpose === value ? "bg-accent text-white" : "text-ink"}`}
+              className={`h-11 rounded-xl px-4 text-sm font-bold ${purpose === value ? "bg-accent text-on-accent" : "text-ink"}`}
             >
               {label}
             </button>
@@ -460,7 +460,7 @@ export default function ClassSelector({
                 <button
                   type="button"
                   onClick={() => switchPurpose("abono")}
-                  className="h-13 rounded-2xl bg-accent font-bold text-white"
+                  className="h-13 rounded-2xl bg-accent font-bold text-on-accent"
                 >
                   Ver abonos
                 </button>
@@ -523,7 +523,7 @@ export default function ClassSelector({
                     <button
                       type="submit"
                       disabled={busy}
-                      className="h-13 rounded-2xl bg-accent text-base font-bold text-white disabled:opacity-40"
+                      className="h-13 rounded-2xl bg-accent text-base font-bold text-on-accent disabled:opacity-40"
                     >
                       {busy ? "Enviando…" : "Enviarme el enlace"}
                     </button>
@@ -538,7 +538,7 @@ export default function ClassSelector({
                     type="button"
                     onClick={onContinue}
                     disabled={n === 0 || busy}
-                    className="h-13 rounded-2xl bg-accent text-base font-bold text-white disabled:opacity-40"
+                    className="h-13 rounded-2xl bg-accent text-base font-bold text-on-accent disabled:opacity-40"
                   >
                     {busy
                       ? "Reservando…"
@@ -551,7 +551,7 @@ export default function ClassSelector({
             )}
 
             {error && (
-              <p className="rounded-xl bg-accent-soft px-3 py-2 text-sm font-semibold text-accent">
+              <p className="rounded-xl bg-accent-soft px-3 py-2 text-sm font-semibold text-accent-text">
                 {error}
               </p>
             )}
@@ -589,7 +589,7 @@ export default function ClassSelector({
                     <button
                       type="button"
                       onClick={() => switchPurpose("trial")}
-                      className="font-semibold text-accent underline"
+                      className="font-semibold text-accent-text underline"
                     >
                       Prueba una clase por{" "}
                       {formatPrice(trial.price_cents, studio.currency)}
@@ -635,7 +635,7 @@ export default function ClassSelector({
                     key={t.plan.id}
                     className={`flex justify-between rounded-lg px-2 py-1.5 text-sm ${
                       tier?.plan.id === t.plan.id
-                        ? "bg-accent-soft font-bold text-accent"
+                        ? "bg-accent-soft font-bold text-accent-text"
                         : "text-muted"
                     }`}
                   >
@@ -794,7 +794,7 @@ export default function ClassSelector({
                 <button
                   type="submit"
                   disabled={busy}
-                  className="h-13 rounded-2xl bg-accent text-base font-bold text-white disabled:opacity-40"
+                  className="h-13 rounded-2xl bg-accent text-base font-bold text-on-accent disabled:opacity-40"
                 >
                   {busy ? "Enviando…" : "Enviarme el enlace"}
                 </button>
@@ -813,7 +813,7 @@ export default function ClassSelector({
                 type="button"
                 onClick={onContinue}
                 disabled={n === 0 || busy || !changed}
-                className="h-13 rounded-2xl bg-accent text-base font-bold text-white disabled:opacity-40"
+                className="h-13 rounded-2xl bg-accent text-base font-bold text-on-accent disabled:opacity-40"
               >
                 {busy
                   ? "Guardando…"
@@ -828,7 +828,7 @@ export default function ClassSelector({
             )}
 
             {error && (
-              <p className="rounded-xl bg-accent-soft px-3 py-2 text-sm font-semibold text-accent">
+              <p className="rounded-xl bg-accent-soft px-3 py-2 text-sm font-semibold text-accent-text">
                 {error}
               </p>
             )}

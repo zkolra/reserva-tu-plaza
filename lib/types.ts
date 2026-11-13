@@ -9,6 +9,8 @@ export type Studio = {
   renewal_mode: "auto" | "manual" | "choice";
   enrollment_fee_cents: number;
   enrollment_valid_days: number;
+  accent_color: string;
+  logo_url: string | null;
 };
 
 export type ClassSeries = {

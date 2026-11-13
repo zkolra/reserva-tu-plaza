@@ -105,10 +105,10 @@ export default function LoginForm({ sb }: { sb: SupabaseClient }) {
               />
             </>
           )}
-          <button type="submit" disabled={busy} className="h-13 rounded-2xl bg-accent font-bold text-white disabled:opacity-40">
+          <button type="submit" disabled={busy} className="h-13 rounded-2xl bg-accent font-bold text-on-accent disabled:opacity-40">
             {busy ? "Un momento…" : mode === "password" ? "Entrar" : "Enviarme el enlace"}
           </button>
-          {error && <p className="text-sm font-semibold text-accent">{error}</p>}
+          {error && <p className="text-sm font-semibold text-accent-text">{error}</p>}
         </form>
       )}
     </main>

@@ -7,6 +7,8 @@ import { formatPrice } from "@/lib/pricing";
 import type { SupabaseConfig } from "@/lib/useAccount";
 import { useSession } from "@/lib/useSession";
 import LoginForm from "../LoginForm";
+import StudioLogo from "@/components/StudioLogo";
+import { THEME_PRESETS, contrast, themeVars } from "@/lib/theme";
 
 const DAYS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const hhmm = (t: string) => t.slice(0, 5);
@@ -21,6 +23,8 @@ type Studio = {
   renewal_mode: "auto" | "manual" | "choice";
   enrollment_fee_cents: number;
   enrollment_valid_days: number;
+  accent_color: string;
+  logo_url: string | null;
 };
 type Series = {
   id: string;
@@ -46,7 +50,7 @@ type Plan = {
   sort: number;
 };
 type Taken = { series_id: string; taken_total: number; taken_leaders: number; taken_followers: number };
-type Tab = "alumnos" | "clases" | "precios" | "ajustes";
+type Tab = "alumnos" | "clases" | "precios" | "apariencia" | "ajustes";
 
 export default function AdminStudio({ cfg, slug }: { cfg: SupabaseConfig; slug: string }) {
   const { sb, userId, email, ready } = useSession(cfg);
@@ -57,7 +61,7 @@ export default function AdminStudio({ cfg, slug }: { cfg: SupabaseConfig; slug: 
   useEffect(() => {
     if (!sb || !userId) return;
     (async () => {
-      const { data: s } = await sb.from("studios").select("id, name, slug, currency, cancel_hours, renewal_mode, enrollment_fee_cents, enrollment_valid_days").eq("slug", slug).maybeSingle();
+      const { data: s } = await sb.from("studios").select("id, name, slug, currency, cancel_hours, renewal_mode, enrollment_fee_cents, enrollment_valid_days, accent_color, logo_url").eq("slug", slug).maybeSingle();
       if (!s) {
         setAllowed(false);
         return;
@@ -91,16 +95,15 @@ export default function AdminStudio({ cfg, slug }: { cfg: SupabaseConfig; slug: 
     ["alumnos", "Alumnos"],
     ["clases", "Clases"],
     ["precios", "Precios"],
+    ["apariencia", "Apariencia"],
     ["ajustes", "Ajustes"],
   ];
 
   return (
-    <div className="flex flex-1 flex-wrap">
+    <div style={themeVars(studio.accent_color)} className="flex flex-1 flex-wrap">
       <nav aria-label="Menú del panel" className="flex max-w-full flex-[1_1_220px] flex-col gap-1 bg-ink p-4 text-white">
         <div className="flex items-center gap-2.5 px-2 pb-5 pt-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent font-display text-sm font-bold">
-            {studio.name.slice(0, 1)}
-          </div>
+          <StudioLogo name={studio.name} logoUrl={studio.logo_url} />
           <div className="font-bold">{studio.name}</div>
         </div>
         {tabs.map(([key, label]) => (
@@ -131,6 +134,7 @@ export default function AdminStudio({ cfg, slug }: { cfg: SupabaseConfig; slug: 
         {tab === "alumnos" && <Students sb={sb} studio={studio} />}
         {tab === "clases" && <Classes sb={sb} studio={studio} />}
         {tab === "precios" && <Prices sb={sb} studio={studio} />}
+        {tab === "apariencia" && <Appearance sb={sb} studio={studio} onSaved={setStudio} />}
         {tab === "ajustes" && <Settings sb={sb} studio={studio} onSaved={setStudio} />}
       </main>
     </div>
@@ -358,7 +362,7 @@ function Classes({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
         <button
           type="button"
           onClick={() => setEditing("new")}
-          className="h-11 rounded-xl bg-accent px-4 text-sm font-bold text-white"
+          className="h-11 rounded-xl bg-accent px-4 text-sm font-bold text-on-accent"
         >
           + Añadir clase
         </button>
@@ -501,7 +505,7 @@ function SeriesForm({
         </Field>
       )}
       <div className="col-span-full flex gap-2">
-        <button type="submit" className="h-11 rounded-xl bg-accent px-5 text-sm font-bold text-white">
+        <button type="submit" className="h-11 rounded-xl bg-accent px-5 text-sm font-bold text-on-accent">
           Guardar
         </button>
         <button type="button" onClick={onCancel} className="h-11 rounded-xl border border-line px-5 text-sm font-bold">
@@ -653,7 +657,7 @@ function PlanRow({
           onClick={onDelete}
           aria-label={`Eliminar ${plan.name}`}
           title="Eliminar"
-          className="-my-2 flex h-9 w-9 items-center justify-center rounded-lg text-base text-muted hover:bg-accent-soft hover:text-accent"
+          className="-my-2 flex h-9 w-9 items-center justify-center rounded-lg text-base text-muted hover:bg-accent-soft hover:text-accent-text"
         >
           ✕
         </button>
@@ -854,6 +858,207 @@ function Settings({ sb, studio, onSaved }: { sb: SupabaseClient; studio: Studio;
   );
 }
 
+/* ───────────────────────── Apariencia ───────────────────────── */
+
+function Appearance({ sb, studio, onSaved }: { sb: SupabaseClient; studio: Studio; onSaved: (s: Studio) => void }) {
+  const [accent, setAccent] = useState(studio.accent_color || "#b8235a");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const dirty = accent.toLowerCase() !== (studio.accent_color || "").toLowerCase();
+  const lowContrast = contrast(accent, "#ffffff") < 3;
+
+  function flash(text: string) {
+    setMsg(text);
+    setTimeout(() => setMsg(null), 2000);
+  }
+
+  async function saveColor() {
+    setError(null);
+    const { error } = await sb.from("studios").update({ accent_color: accent }).eq("id", studio.id);
+    if (error) setError(error.message);
+    else {
+      onSaved({ ...studio, accent_color: accent });
+      flash("Color guardado ✓");
+    }
+  }
+
+  async function uploadLogo(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setError(null);
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      setError("Sube el logo en PNG, JPG o WebP.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setError("El logo no puede pesar más de 2 MB.");
+      return;
+    }
+    setBusy(true);
+    const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+    const path = `${studio.id}/logo-${Date.now()}.${ext}`;
+    const up = await sb.storage.from("logos").upload(path, file, { contentType: file.type, upsert: false });
+    if (up.error) {
+      setBusy(false);
+      setError(up.error.message);
+      return;
+    }
+    const url = sb.storage.from("logos").getPublicUrl(path).data.publicUrl;
+    const { error } = await sb.from("studios").update({ logo_url: url }).eq("id", studio.id);
+    setBusy(false);
+    if (error) {
+      setError(error.message);
+      return;
+    }
+    removeStored(studio.logo_url);
+    onSaved({ ...studio, logo_url: url });
+    flash("Logo guardado ✓");
+  }
+
+  function removeStored(url: string | null) {
+    const marker = "/object/public/logos/";
+    if (url && url.includes(marker)) sb.storage.from("logos").remove([url.split(marker)[1]]);
+  }
+
+  async function removeLogo() {
+    setError(null);
+    const { error } = await sb.from("studios").update({ logo_url: null }).eq("id", studio.id);
+    if (error) {
+      setError(error.message);
+      return;
+    }
+    removeStored(studio.logo_url);
+    onSaved({ ...studio, logo_url: null });
+  }
+
+  return (
+    <section className="flex max-w-4xl flex-col gap-5">
+      <h1 className="font-display text-2xl font-bold sm:text-3xl">Apariencia</h1>
+      <p className="-mt-2 max-w-2xl text-sm text-muted">
+        Elige el color y el logo para que el horario combine con tu web. Los cambios se ven al momento en tu horario
+        público.
+      </p>
+      {error && <ErrorBox text={error} />}
+
+      <div className="flex flex-wrap items-start gap-5">
+        <div className="flex min-w-0 flex-[1_1_340px] flex-col gap-5">
+          <div className="rounded-2xl bg-white p-5">
+            <h2 className="text-base font-bold">Color principal</h2>
+            <div className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(88px,1fr))] gap-2" role="group" aria-label="Colores listos">
+              {THEME_PRESETS.map((p) => {
+                const on = p.accent.toLowerCase() === accent.toLowerCase();
+                return (
+                  <button
+                    key={p.key}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setAccent(p.accent)}
+                    className={`flex flex-col items-center gap-1.5 rounded-xl border p-2 text-xs font-semibold ${
+                      on ? "border-2 border-ink" : "border-line"
+                    }`}
+                  >
+                    <span className="h-8 w-full rounded-lg" style={{ background: p.accent }} />
+                    {p.name}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-sm font-bold">
+                <input
+                  type="color"
+                  value={accent}
+                  onChange={(e) => setAccent(e.target.value)}
+                  className="h-11 w-14 cursor-pointer rounded-lg border border-line bg-white p-1"
+                />
+                Otro color
+              </label>
+              <span className="font-mono text-sm text-muted">{accent.toUpperCase()}</span>
+            </div>
+            {lowContrast && (
+              <p className="mt-3 rounded-xl bg-paper px-3 py-2 text-xs leading-relaxed">
+                Es un color claro: en los botones usaremos texto oscuro para que se lea bien.
+              </p>
+            )}
+
+            <div className="mt-4 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={saveColor}
+                disabled={!dirty}
+                className="h-11 rounded-xl bg-ink px-5 text-sm font-bold text-white disabled:opacity-40"
+              >
+                Guardar color
+              </button>
+              {dirty && (
+                <button type="button" onClick={() => setAccent(studio.accent_color)} className="text-sm underline">
+                  Deshacer
+                </button>
+              )}
+              {msg && <span className="text-sm font-semibold text-ok-text">{msg}</span>}
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-white p-5">
+            <h2 className="text-base font-bold">Logo</h2>
+            <p className="mt-1 text-sm text-muted">PNG, JPG o WebP, hasta 2 MB. Mejor con fondo transparente.</p>
+            <div className="mt-4 flex flex-wrap items-center gap-4">
+              <div className="flex h-16 min-w-16 items-center justify-center rounded-xl bg-ink px-3">
+                <StudioLogo name={studio.name} logoUrl={studio.logo_url} size={40} />
+              </div>
+              <label className="inline-flex h-11 cursor-pointer items-center rounded-xl border border-line px-4 text-sm font-bold">
+                {busy ? "Subiendo…" : studio.logo_url ? "Cambiar logo" : "Subir logo"}
+                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={uploadLogo} disabled={busy} className="sr-only" />
+              </label>
+              {studio.logo_url && (
+                <button type="button" onClick={removeLogo} className="text-sm text-muted underline">
+                  Quitar logo
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="min-w-0 flex-[1_1_300px]">
+          <div className="mb-2 text-xs font-bold text-muted">Vista previa</div>
+          <div style={themeVars(accent)} className="overflow-hidden rounded-2xl border border-line bg-cream">
+            <div className="flex items-center gap-2.5 bg-ink px-4 py-3 text-white">
+              <StudioLogo name={studio.name} logoUrl={studio.logo_url} size={30} />
+              <span className="text-sm font-bold">{studio.name}</span>
+            </div>
+            <div className="flex flex-col gap-3 p-4">
+              <div className="inline-flex w-fit gap-1 rounded-xl bg-white p-1 text-xs font-bold">
+                <span className="rounded-lg bg-accent px-3 py-2 text-on-accent">Abono mensual</span>
+                <span className="px-3 py-2">Clase de prueba</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-xl border-2 border-ink bg-ink p-2.5 text-white">
+                  <div className="text-[11px] font-bold opacity-80">✓ Elegida</div>
+                  <div className="text-sm font-bold">Salsa Spicy</div>
+                </div>
+                <div className="rounded-xl border border-line bg-white p-2.5">
+                  <div className="text-sm font-bold">Bachata</div>
+                  <div className="text-[11px] font-bold text-ok-text">6 plazas libres</div>
+                </div>
+              </div>
+              <div className="flex justify-between rounded-lg bg-accent-soft px-2 py-1.5 text-xs font-bold text-accent-text">
+                <span>2 clases por semana</span>
+                <span>60 €</span>
+              </div>
+              <div className="flex h-11 items-center justify-center rounded-xl bg-accent text-sm font-bold text-on-accent">
+                Confirmar abono
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function PasswordBox({ sb }: { sb: SupabaseClient }) {
   const [password, setPassword] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
@@ -925,5 +1130,5 @@ function Kpi({ label, value }: { label: string; value: string }) {
 }
 
 function ErrorBox({ text }: { text: string }) {
-  return <p className="rounded-xl bg-accent-soft px-3 py-2 text-sm font-semibold text-accent">{text}</p>;
+  return <p className="rounded-xl bg-accent-soft px-3 py-2 text-sm font-semibold text-accent-text">{text}</p>;
 }
