@@ -4,8 +4,16 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { useState } from "react";
 
 /** Entrar al panel: con contraseña (el navegador puede guardarla) o con enlace por email. */
-export default function LoginForm({ sb }: { sb: SupabaseClient }) {
-  const [mode, setMode] = useState<"password" | "link">("password");
+export default function LoginForm({
+  sb,
+  title = "Panel del estudio",
+  defaultMode = "password",
+}: {
+  sb: SupabaseClient;
+  title?: string;
+  defaultMode?: "password" | "link";
+}) {
+  const [mode, setMode] = useState<"password" | "link">(defaultMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [sent, setSent] = useState(false);
@@ -22,7 +30,7 @@ export default function LoginForm({ sb }: { sb: SupabaseClient }) {
       if (error) {
         setError(
           error.message === "Invalid login credentials"
-            ? "Email o contraseña incorrectos. Si todavía no tienes contraseña, entra con el enlace por email y créala en Ajustes."
+            ? "Email o contraseña incorrectos. Si todavía no tienes contraseña, entra con el enlace por email y créala después."
             : error.message,
         );
       }
@@ -44,7 +52,7 @@ export default function LoginForm({ sb }: { sb: SupabaseClient }) {
 
   return (
     <main className="mx-auto w-full max-w-md px-6 py-20">
-      <h1 className="font-display text-3xl font-bold">Panel del estudio</h1>
+      <h1 className="font-display text-3xl font-bold">{title}</h1>
 
       <div className="mt-6 inline-flex gap-1 rounded-2xl bg-white p-1" role="group" aria-label="Cómo entrar">
         {(

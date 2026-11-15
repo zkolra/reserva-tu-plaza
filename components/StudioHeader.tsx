@@ -13,7 +13,7 @@ export default function StudioHeader({
   logoUrl: string | null;
   slug: string;
   showPrivate: boolean;
-  current: "horario" | "particulares";
+  current: "horario" | "particulares" | "cuenta";
 }) {
   const link = (href: string, label: string, on: boolean) => (
     <Link
@@ -31,12 +31,11 @@ export default function StudioHeader({
           <StudioLogo name={name} logoUrl={logoUrl} />
           <div className="font-bold">{name}</div>
         </div>
-        {showPrivate && (
-          <nav aria-label="Secciones" className="flex gap-1">
-            {link(`/${slug}`, "Clases en grupo", current === "horario")}
-            {link(`/${slug}/particulares`, "Clases particulares", current === "particulares")}
-          </nav>
-        )}
+        <nav aria-label="Secciones" className="flex flex-wrap gap-1">
+          {link(`/${slug}`, showPrivate ? "Clases en grupo" : "Horario", current === "horario")}
+          {showPrivate && link(`/${slug}/particulares`, "Clases particulares", current === "particulares")}
+          {link(`/${slug}/cuenta`, "Mi cuenta", current === "cuenta")}
+        </nav>
       </div>
     </header>
   );
