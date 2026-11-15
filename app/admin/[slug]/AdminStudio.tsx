@@ -8,6 +8,7 @@ import type { SupabaseConfig } from "@/lib/useAccount";
 import { useSession } from "@/lib/useSession";
 import LoginForm from "../LoginForm";
 import PrivateLessons from "./PrivateLessons";
+import Attendance from "./Attendance";
 import StudioLogo from "@/components/StudioLogo";
 import { THEME_PRESETS, contrast, themeVars } from "@/lib/theme";
 
@@ -38,6 +39,7 @@ type Studio = {
   enrollment_valid_days: number;
   accent_color: string;
   logo_url: string | null;
+  timezone?: string | null;
 };
 type Room = { id: string; name: string };
 type Series = {
@@ -70,7 +72,7 @@ type Taken = {
   taken_leaders: number;
   taken_followers: number;
 };
-type Tab = "alumnos" | "clases" | "precios" | "particulares" | "apariencia" | "ajustes";
+type Tab = "asistencia" | "alumnos" | "clases" | "precios" | "particulares" | "apariencia" | "ajustes";
 
 export default function AdminStudio({
   cfg,
@@ -82,7 +84,7 @@ export default function AdminStudio({
   const { sb, userId, email, ready } = useSession(cfg);
   const [studio, setStudio] = useState<Studio | null>(null);
   const [allowed, setAllowed] = useState<boolean | null>(null);
-  const [tab, setTab] = useState<Tab>("alumnos");
+  const [tab, setTab] = useState<Tab>("asistencia");
 
   useEffect(() => {
     if (!sb || !userId) return;
@@ -90,7 +92,7 @@ export default function AdminStudio({
       const { data: s } = await sb
         .from("studios")
         .select(
-          "id, name, slug, currency, cancel_hours, renewal_mode, enrollment_fee_cents, enrollment_valid_days, accent_color, logo_url",
+          "id, name, slug, currency, cancel_hours, renewal_mode, enrollment_fee_cents, enrollment_valid_days, accent_color, logo_url, timezone",
         )
         .eq("slug", slug)
         .maybeSingle();
@@ -123,6 +125,7 @@ export default function AdminStudio({
     );
 
   const tabs: [Tab, string][] = [
+    ["asistencia", "Asistencia"],
     ["alumnos", "Alumnos"],
     ["clases", "Clases"],
     ["precios", "Precios"],
@@ -175,6 +178,7 @@ export default function AdminStudio({
       </nav>
 
       <main className="min-w-0 flex-[999_1_560px] p-5 sm:p-8">
+        {tab === "asistencia" && <Attendance sb={sb} studio={studio} />}
         {tab === "alumnos" && <Students sb={sb} studio={studio} />}
         {tab === "clases" && <Classes sb={sb} studio={studio} />}
         {tab === "precios" && <Prices sb={sb} studio={studio} />}
