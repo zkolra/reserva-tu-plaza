@@ -20,7 +20,9 @@ const rows: Row[] = [
   ["c12", 4, "20:00", "Salsa Spicy", "Avanzado", "Ana", false, 14, 0, 6, 0],
   ["c13", 5, "19:00", "Son cubano", "Abierto", "Diego y Ana", true, 5, 5, 2, 2],
   ["c14", 5, "20:00", "Salsa en pareja", "Avanzado", "Ana y Diego", true, 6, 6, 2, 5],
+  ["c15", 1, "19:00", "Salsa On1", "Nivel 5", "Marco", true, 6, 6, 3, 3],
 ];
+const ROOM_2 = new Set(["c15", "c9"]);
 
 const series: ClassSeries[] = rows.map(([id, weekday, time, name, level, teachers, roles, a, b]) => ({
   id,
@@ -28,6 +30,7 @@ const series: ClassSeries[] = rows.map(([id, weekday, time, name, level, teacher
   level,
   teachers,
   weekday,
+  room_id: ROOM_2.has(id) ? "r2" : "r1",
   start_time: `${time}:00`,
   duration_min: 60,
   uses_roles: roles,
@@ -62,5 +65,9 @@ export const demoData: StudioData = {
   series,
   plans,
   availability,
+  rooms: [
+    { id: "r1", name: "Sala 1" },
+    { id: "r2", name: "Sala 2" },
+  ],
   isDemo: true,
 };

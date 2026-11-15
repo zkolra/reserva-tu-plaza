@@ -19,6 +19,7 @@ export type ClassSeries = {
   level: string | null;
   teachers: string | null;
   weekday: number; // 1 = lunes … 7 = domingo
+  room_id: string | null;
   start_time: string; // "19:00:00"
   duration_min: number;
   uses_roles: boolean;
@@ -50,6 +51,7 @@ export type StudioData = {
   series: ClassSeries[];
   plans: Plan[];
   availability: Record<string, Availability>;
+  rooms: { id: string; name: string }[];
   isDemo: boolean;
   /** Por qué se muestran datos de ejemplo en lugar de la base (para diagnosticar). */
   demoReason?: string;

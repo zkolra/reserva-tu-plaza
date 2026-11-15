@@ -57,6 +57,9 @@ export default function ClassSelector({
 }) {
   const { studio, series, plans, availability, modules } = data;
   const rolesOn = modules.roles !== false && series.some((s) => s.uses_roles);
+  const rooms = data.rooms ?? [];
+  const showRooms = rooms.length > 1;
+  const roomName = (x: ClassSeries) => rooms.find((r) => r.id === x.room_id)?.name ?? "";
   const [role, setRole] = useState<DanceRole>("follower");
   const [selected, setSelected] = useState<string[]>([]);
   // "abono" = abono mensual; "trial" = una sola clase de prueba
@@ -238,6 +241,93 @@ export default function ClassSelector({
         ? "Tienes el abono ilimitado: puedes añadir más clases sin coste extra"
         : null;
 
+  // Una tarjeta de clase (en una misma hora puede haber varias, p. ej. en salas distintas)
+  const renderCard = (s: ClassSeries) => {
+                    const a = availability[s.id];
+                    const free = freeSpots(s, a, role);
+                    const isSel = selected.includes(s.id);
+                    const meta = [s.level, s.teachers, showRooms ? roomName(s) : null]
+                      .filter(Boolean)
+                      .join(" · ");
+
+                    if (isSel) {
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          aria-pressed="true"
+                          onClick={() => toggle(s)}
+                          className="flex min-h-[118px] flex-col gap-1 rounded-2xl border-2 border-ink bg-ink p-3 text-left text-white"
+                        >
+                          <span className="text-xs font-bold text-accent-soft">
+                            ✓ Elegida
+                          </span>
+                          <span className="text-sm font-bold">{s.name}</span>
+                          <span className="text-xs text-white/75">{meta}</span>
+                          <span className="text-xs text-white/75">
+                            Toca para quitar
+                          </span>
+                        </button>
+                      );
+                    }
+
+                    if (free <= 0 && !isMine(s.id)) {
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          disabled
+                          className="flex min-h-[118px] flex-col gap-1 rounded-2xl border border-line bg-paper p-3 text-left text-muted"
+                        >
+                          <span className="text-sm font-bold">{s.name}</span>
+                          <span className="text-xs">{meta}</span>
+                          <span className="mt-0.5 flex items-center gap-1.5 text-xs font-bold">
+                            <Dot color="bg-full" />
+                            {s.uses_roles && rolesOn
+                              ? `Completo para ${roleWord}`
+                              : "Completo"}
+                          </span>
+                          {modules.waitlist !== false && (
+                            <span className="text-[11px] underline">
+                              Lista de espera
+                            </span>
+                          )}
+                        </button>
+                      );
+                    }
+
+                    const other = otherRoleSpots(s, a, role);
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        aria-pressed="false"
+                        onClick={() => toggle(s)}
+                        className="flex min-h-[118px] flex-col gap-1 rounded-2xl border border-line bg-white p-3 text-left hover:border-ink"
+                      >
+                        <span className="text-sm font-bold">{s.name}</span>
+                        <span className="text-xs text-muted">{meta}</span>
+                        <span
+                          className={`mt-0.5 flex items-center gap-1.5 text-xs font-bold ${free <= 2 ? "text-few-text" : "text-ok-text"}`}
+                        >
+                          <Dot color={free <= 2 ? "bg-few" : "bg-ok"} />
+                          {isMine(s.id)
+                            ? "Tu plaza está reservada"
+                            : spotsText(free)}
+                          {!isMine(s.id) && s.uses_roles && rolesOn
+                            ? ` (${roleWord})`
+                            : ""}
+                        </span>
+                        {s.uses_roles && rolesOn && (
+                          <span className="text-[11px] text-muted">
+                            {role === "follower" ? "Leaders" : "Followers"}:{" "}
+                            {other > 0 ? `${other} libres` : "completo"}
+                          </span>
+                        )}
+                      </button>
+                    );
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <h1 className="font-display text-3xl font-bold sm:text-4xl">
@@ -340,98 +430,15 @@ export default function ClassSelector({
                 >
                   <div className="pt-3 text-sm font-bold">{t}</div>
                   {days.map((d) => {
-                    const s = series.find(
-                      (x) => x.weekday === d && hhmm(x.start_time) === t,
-                    );
-                    if (!s)
-                      return (
-                        <div
-                          key={d}
-                          className="min-h-[118px] rounded-2xl border border-dashed border-line"
-                        />
-                      );
-                    const a = availability[s.id];
-                    const free = freeSpots(s, a, role);
-                    const isSel = selected.includes(s.id);
-                    const meta = [s.level, s.teachers]
-                      .filter(Boolean)
-                      .join(" · ");
-
-                    if (isSel) {
-                      return (
-                        <button
-                          key={d}
-                          type="button"
-                          aria-pressed="true"
-                          onClick={() => toggle(s)}
-                          className="flex min-h-[118px] flex-col gap-1 rounded-2xl border-2 border-ink bg-ink p-3 text-left text-white"
-                        >
-                          <span className="text-xs font-bold text-accent-soft">
-                            ✓ Elegida
-                          </span>
-                          <span className="text-sm font-bold">{s.name}</span>
-                          <span className="text-xs text-white/75">{meta}</span>
-                          <span className="text-xs text-white/75">
-                            Toca para quitar
-                          </span>
-                        </button>
-                      );
-                    }
-
-                    if (free <= 0 && !isMine(s.id)) {
-                      return (
-                        <button
-                          key={d}
-                          type="button"
-                          disabled
-                          className="flex min-h-[118px] flex-col gap-1 rounded-2xl border border-line bg-paper p-3 text-left text-muted"
-                        >
-                          <span className="text-sm font-bold">{s.name}</span>
-                          <span className="text-xs">{meta}</span>
-                          <span className="mt-0.5 flex items-center gap-1.5 text-xs font-bold">
-                            <Dot color="bg-full" />
-                            {s.uses_roles && rolesOn
-                              ? `Completo para ${roleWord}`
-                              : "Completo"}
-                          </span>
-                          {modules.waitlist !== false && (
-                            <span className="text-[11px] underline">
-                              Lista de espera
-                            </span>
-                          )}
-                        </button>
-                      );
-                    }
-
-                    const other = otherRoleSpots(s, a, role);
+                    const list = series
+                      .filter((x) => x.weekday === d && hhmm(x.start_time) === t)
+                      .sort((a, b) => roomName(a).localeCompare(roomName(b)) || a.name.localeCompare(b.name));
+                    if (list.length === 0)
+                      return <div key={d} className="min-h-[118px] rounded-2xl border border-dashed border-line" />;
                     return (
-                      <button
-                        key={d}
-                        type="button"
-                        aria-pressed="false"
-                        onClick={() => toggle(s)}
-                        className="flex min-h-[118px] flex-col gap-1 rounded-2xl border border-line bg-white p-3 text-left hover:border-ink"
-                      >
-                        <span className="text-sm font-bold">{s.name}</span>
-                        <span className="text-xs text-muted">{meta}</span>
-                        <span
-                          className={`mt-0.5 flex items-center gap-1.5 text-xs font-bold ${free <= 2 ? "text-few-text" : "text-ok-text"}`}
-                        >
-                          <Dot color={free <= 2 ? "bg-few" : "bg-ok"} />
-                          {isMine(s.id)
-                            ? "Tu plaza está reservada"
-                            : spotsText(free)}
-                          {!isMine(s.id) && s.uses_roles && rolesOn
-                            ? ` (${roleWord})`
-                            : ""}
-                        </span>
-                        {s.uses_roles && rolesOn && (
-                          <span className="text-[11px] text-muted">
-                            {role === "follower" ? "Leaders" : "Followers"}:{" "}
-                            {other > 0 ? `${other} libres` : "completo"}
-                          </span>
-                        )}
-                      </button>
+                      <div key={d} className="flex flex-col gap-2">
+                        {list.map(renderCard)}
+                      </div>
                     );
                   })}
                 </div>
