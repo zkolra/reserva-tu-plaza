@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { loadStudio } from "@/lib/supabase";
 import { supabaseConfig } from "@/lib/config";
 import ClassSelector from "./ClassSelector";
-import StudioLogo from "@/components/StudioLogo";
+import StudioHeader from "@/components/StudioHeader";
+import { privateEnabled } from "@/lib/private";
 import { themeVars } from "@/lib/theme";
 
 export default function StudioSchedulePage({ params }: PageProps<"/[slug]">) {
@@ -18,15 +19,17 @@ async function StudioSchedule({ params }: { params: Promise<{ slug: string }> })
   const { slug } = await params;
   const data = await loadStudio(slug);
   if (!data) notFound();
+  const showPrivate = await privateEnabled(data.studio.id);
 
   return (
     <div style={themeVars(data.studio.accent_color)} className="flex flex-1 flex-col">
-      <header className="bg-ink text-white">
-        <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-4 sm:px-6">
-          <StudioLogo name={data.studio.name} logoUrl={data.studio.logo_url} />
-          <div className="font-bold">{data.studio.name}</div>
-        </div>
-      </header>
+      <StudioHeader
+        name={data.studio.name}
+        logoUrl={data.studio.logo_url}
+        slug={data.studio.slug}
+        showPrivate={showPrivate}
+        current="horario"
+      />
       <ClassSelector data={data} supabaseConfig={supabaseConfig()} />
     </div>
   );

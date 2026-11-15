@@ -7,6 +7,7 @@ import { formatPrice } from "@/lib/pricing";
 import type { SupabaseConfig } from "@/lib/useAccount";
 import { useSession } from "@/lib/useSession";
 import LoginForm from "../LoginForm";
+import PrivateLessons from "./PrivateLessons";
 import StudioLogo from "@/components/StudioLogo";
 import { THEME_PRESETS, contrast, themeVars } from "@/lib/theme";
 
@@ -69,7 +70,7 @@ type Taken = {
   taken_leaders: number;
   taken_followers: number;
 };
-type Tab = "alumnos" | "clases" | "precios" | "apariencia" | "ajustes";
+type Tab = "alumnos" | "clases" | "precios" | "particulares" | "apariencia" | "ajustes";
 
 export default function AdminStudio({
   cfg,
@@ -125,6 +126,7 @@ export default function AdminStudio({
     ["alumnos", "Alumnos"],
     ["clases", "Clases"],
     ["precios", "Precios"],
+    ["particulares", "Clases particulares"],
     ["apariencia", "Apariencia"],
     ["ajustes", "Ajustes"],
   ];
@@ -176,6 +178,7 @@ export default function AdminStudio({
         {tab === "alumnos" && <Students sb={sb} studio={studio} />}
         {tab === "clases" && <Classes sb={sb} studio={studio} />}
         {tab === "precios" && <Prices sb={sb} studio={studio} />}
+        {tab === "particulares" && <PrivateLessons sb={sb} studio={studio} />}
         {tab === "apariencia" && (
           <Appearance sb={sb} studio={studio} onSaved={setStudio} />
         )}
