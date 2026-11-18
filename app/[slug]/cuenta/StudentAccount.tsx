@@ -24,6 +24,7 @@ type Membership = {
   starts_on: string;
   ends_on: string | null;
   auto_renew: boolean;
+  payment_method?: string | null;
   enrollment_fee_cents: number;
   plans: { name: string; price_cents: number } | null;
   membership_series: {
@@ -41,6 +42,8 @@ const day = (iso: string) => {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d, 12)).toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 };
+
+const PAID_AT_SCHOOL: Record<string, string> = { cash: "efectivo", transfer: "transferencia", other: "otro pago" };
 
 export default function StudentAccount({ studio, cfg }: { studio: AccountStudio; cfg: SupabaseConfig }) {
   const { sb, userId, email, ready } = useSession(cfg);
@@ -65,7 +68,7 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
       sb
         .from("memberships")
         .select(
-          "id, status, starts_on, ends_on, auto_renew, enrollment_fee_cents, plans(name, price_cents), membership_series(role, class_series(name, level, weekday, start_time, rooms(name)))",
+          "id, status, starts_on, ends_on, auto_renew, payment_method, enrollment_fee_cents, plans(name, price_cents), membership_series(role, class_series(name, level, weekday, start_time, rooms(name)))",
         )
         .eq("studio_id", studio.id)
         .eq("user_id", userId)
@@ -130,6 +133,7 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
   const today = new Date().toISOString().slice(0, 10);
   const active = (memberships ?? []).find((m) => m.status === "active" && (!m.ends_on || m.ends_on >= today)) ?? null;
   const past = (memberships ?? []).filter((m) => m !== active);
+  const paidAtSchool = !!active && !!PAID_AT_SCHOOL[active.payment_method ?? ""];
   const nowIso = new Date().toISOString();
   const upcoming = privates.filter((p) => p.starts_at >= nowIso).reverse();
   const pastPrivates = privates.filter((p) => p.starts_at < nowIso);
@@ -205,8 +209,13 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
               )}
             </ul>
 
-            <div className={`rounded-xl px-3 py-3 text-sm ${active.auto_renew ? "bg-ok-soft text-ok-text" : "bg-paper"}`}>
-              {active.auto_renew ? (
+            <div className={`rounded-xl px-3 py-3 text-sm ${active.auto_renew && !paidAtSchool ? "bg-ok-soft text-ok-text" : "bg-paper"}`}>
+              {paidAtSchool ? (
+                <>
+                  <b>Pagado en la escuela ({PAID_AT_SCHOOL[active.payment_method ?? ""]}) hasta el {active.ends_on ? day(active.ends_on) : "final del mes"}.</b>{" "}
+                  Para renovarlo, habla con la escuela.
+                </>
+              ) : active.auto_renew ? (
                 <b>Se renueva automáticamente cada mes.</b>
               ) : (
                 <>
@@ -220,7 +229,7 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
               <Link href={`/${studio.slug}`} className="flex h-11 items-center rounded-xl bg-ink px-4 text-sm font-bold text-white">
                 Cambiar mis clases
               </Link>
-              {active.auto_renew ? (
+              {paidAtSchool ? null : active.auto_renew ? (
                 <button
                   type="button"
                   onClick={() =>
