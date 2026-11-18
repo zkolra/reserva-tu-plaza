@@ -536,13 +536,17 @@ function AddStudent({
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${s.session?.access_token ?? ""}` },
         body: JSON.stringify({ membership: membershipId }),
       })
-        .then((x) => x.json() as Promise<{ sent: boolean; reason?: string }>)
+        .then((x) =>
+          x.ok || x.status === 404 || x.status === 400
+            ? (x.json() as Promise<{ sent: boolean; reason?: string }>)
+            : { sent: false, reason: `http_${x.status}` },
+        )
         .catch(() => ({ sent: false, reason: "network" }));
       note = r.sent
         ? `Le hemos enviado un email a ${email.trim()}.`
         : r.reason === "not_configured"
           ? "Alumno añadido. El email de bienvenida se enviará cuando estén activados los correos."
-          : "Alumno añadido, pero no se pudo enviar el email.";
+          : `Alumno añadido, pero no se pudo enviar el email (${r.reason ?? "error"}).`;
     }
     setBusy(false);
     onDone(note);

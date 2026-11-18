@@ -89,6 +89,9 @@ export async function sendEmail(opts: {
       ...(opts.replyTo ? { reply_to: opts.replyTo } : {}),
     }),
   });
-  if (!res.ok) return { sent: false, reason: `resend_${res.status}` };
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    return { sent: false, reason: `resend_${res.status} ${detail.slice(0, 200)}` };
+  }
   return { sent: true };
 }
