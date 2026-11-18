@@ -37,6 +37,7 @@ type Studio = {
   cancel_hours: number;
   renewal_mode: "auto" | "manual" | "choice";
   enrollment_fee_cents: number;
+  contact_email: string | null;
   enrollment_valid_days: number;
   accent_color: string;
   logo_url: string | null;
@@ -102,9 +103,12 @@ export default function AdminStudio({
         setAllowed(false);
         return;
       }
+      // contact_email llega con la migración 0017; sin ella, el panel sigue funcionando
+      const { data: c } = await sb.from("studios").select("contact_email").eq("id", s.id).maybeSingle();
+      (s as Studio).contact_email = (c as { contact_email?: string | null } | null)?.contact_email ?? null;
       // Equipo de la escuela o superadmin de la plataforma
       const { data: ok } = await sb.rpc("is_studio_staff", { sid: s.id });
-      setStudio(s);
+      setStudio(s as Studio);
       setAllowed(!!ok);
     })();
   }, [sb, userId, slug]);
@@ -231,6 +235,7 @@ function Students({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
   const [emails, setEmails] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
 
   async function cancelMembership(r: MembershipRow, who: string) {
@@ -307,12 +312,14 @@ function Students({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
         )}
       </div>
       {error && <ErrorBox text={error} />}
+      {notice && <p className="rounded-xl bg-ok-soft px-4 py-3 text-sm font-semibold text-ok-text">{notice}</p>}
       {adding && (
         <AddStudent
           sb={sb}
           studio={studio}
-          onDone={() => {
+          onDone={(note) => {
             setAdding(false);
+            setNotice(note);
             setReload((n) => n + 1);
           }}
           onCancel={() => setAdding(false)}
@@ -455,7 +462,7 @@ function AddStudent({
 }: {
   sb: SupabaseClient;
   studio: Studio;
-  onDone: () => void;
+  onDone: (note: string | null) => void;
   onCancel: () => void;
 }) {
   const [series, setSeries] = useState<Series[]>([]);
@@ -468,6 +475,7 @@ function AddStudent({
   const [months, setMonths] = useState(1);
   const [payment, setPayment] = useState("cash");
   const [enrollment, setEnrollment] = useState(studio.enrollment_fee_cents > 0);
+  const [welcome, setWelcome] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -504,7 +512,7 @@ function AddStudent({
       return;
     }
     setBusy(true);
-    const { error } = await sb.rpc("admin_create_membership", {
+    const { data: membershipId, error } = await sb.rpc("admin_create_membership", {
       p_studio: studio.id,
       p_series: picked,
       p_role: needsRole ? role : "none",
@@ -515,9 +523,29 @@ function AddStudent({
       p_payment: payment,
       p_enrollment: enrollment,
     });
+    if (error) {
+      setBusy(false);
+      setError(error.message);
+      return;
+    }
+    let note: string | null = null;
+    if (email.trim() && welcome) {
+      const { data: s } = await sb.auth.getSession();
+      const r = await fetch("/api/emails/welcome", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${s.session?.access_token ?? ""}` },
+        body: JSON.stringify({ membership: membershipId }),
+      })
+        .then((x) => x.json() as Promise<{ sent: boolean; reason?: string }>)
+        .catch(() => ({ sent: false, reason: "network" }));
+      note = r.sent
+        ? `Le hemos enviado un email a ${email.trim()}.`
+        : r.reason === "not_configured"
+          ? "Alumno añadido. El email de bienvenida se enviará cuando estén activados los correos."
+          : "Alumno añadido, pero no se pudo enviar el email.";
+    }
     setBusy(false);
-    if (error) setError(error.message);
-    else onDone();
+    onDone(note);
   }
 
   return (
@@ -612,6 +640,12 @@ function AddStudent({
           {isFullPass(tier) ? `${plan.name} (todas las clases)` : `Abono de ${n} ${n === 1 ? "clase" : "clases"} por semana`}: <b>{formatPrice(plan.price_cents, studio.currency)}</b> al mes
           {months > 1 ? ` · ${formatPrice(plan.price_cents * months, studio.currency)} por ${months} meses` : ""}
         </p>
+      )}
+      {email.trim() && (
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={welcome} onChange={(e) => setWelcome(e.target.checked)} className="h-5 w-5" />
+          Enviarle un email de bienvenida con sus clases y el enlace a «Mi cuenta»
+        </label>
       )}
       {error && <ErrorBox text={error} />}
       <div className="flex gap-2">
@@ -1565,6 +1599,7 @@ function Settings({
 }) {
   const [mods, setMods] = useState<Record<string, boolean>>({});
   const [name, setName] = useState(studio.name);
+  const [contact, setContact] = useState(studio.contact_email ?? "");
   const [hours, setHours] = useState(String(studio.cancel_hours));
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1632,7 +1667,11 @@ function Settings({
   async function saveStudio(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    const patch = { name, cancel_hours: Number(hours) };
+    const patch = {
+      name,
+      cancel_hours: Number(hours),
+      ...((contact.trim() || null) !== studio.contact_email ? { contact_email: contact.trim() || null } : {}),
+    };
     const { error } = await sb
       .from("studios")
       .update(patch)
@@ -1661,6 +1700,15 @@ function Settings({
             value={name}
             onChange={(e) => setName(e.target.value)}
             className={`${inputCls} w-64`}
+          />
+        </Field>
+        <Field label="Email de la escuela (aquí llegan las respuestas)">
+          <input
+            type="email"
+            value={contact}
+            onChange={(e) => setContact(e.target.value)}
+            placeholder="hola@tuescuela.com"
+            className={`${inputCls} w-72`}
           />
         </Field>
         <Field label="Cancelación gratis hasta (horas antes)">
