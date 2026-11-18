@@ -16,7 +16,13 @@ import {
 } from "@/lib/private";
 
 type StudioLite = { id: string; slug: string; currency: string };
-type Settings = { timezone: string; private_requires_confirmation: boolean; private_styles: string[] };
+type Settings = {
+  timezone: string;
+  private_requires_confirmation: boolean;
+  private_styles: string[];
+  private_slot_step: number;
+  private_buffer_min: number;
+};
 type Booking = {
   id: string;
   option_name: string;
@@ -53,7 +59,7 @@ export default function PrivateLessons({ sb, studio }: { sb: SupabaseClient; stu
   const load = useCallback(async () => {
     const [m, s, t, o, p] = await Promise.all([
       sb.from("studio_modules").select("enabled").eq("studio_id", studio.id).eq("module", "private").maybeSingle(),
-      sb.from("studios").select("timezone, private_requires_confirmation, private_styles").eq("id", studio.id).single(),
+      sb.from("studios").select("timezone, private_requires_confirmation, private_styles, private_slot_step, private_buffer_min").eq("id", studio.id).single(),
       sb.from("teachers").select("id, name, offers_private, active, sort").eq("studio_id", studio.id).order("sort").order("created_at"),
       sb
         .from("private_options")
@@ -1224,6 +1230,42 @@ function PrivateSettings({
         >
           <span className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-all ${settings.private_requires_confirmation ? "left-6" : "left-1"}`} />
         </button>
+      </div>
+
+      <div className="flex flex-col gap-4 rounded-2xl bg-white p-5">
+        <div>
+          <div className="text-sm font-bold">Horas de inicio de las clases</div>
+          <div className="text-xs text-muted">
+            Ej.: clase de 50 min + 10 min de descanso, «según la duración» → los alumnos ven 10:00, 11:00, 12:00…
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-4">
+          <Field label="Las clases empiezan cada">
+            <select
+              value={settings.private_slot_step ?? 0}
+              onChange={(e) => patch({ private_slot_step: Number(e.target.value) })}
+              className={`${inputCls} w-64`}
+            >
+              <option value={0}>Según la duración (recomendado)</option>
+              <option value={15}>15 minutos</option>
+              <option value={30}>30 minutos</option>
+              <option value={60}>60 minutos</option>
+            </select>
+          </Field>
+          <Field label="Descanso entre clases">
+            <select
+              value={settings.private_buffer_min ?? 0}
+              onChange={(e) => patch({ private_buffer_min: Number(e.target.value) })}
+              className={`${inputCls} w-48`}
+            >
+              {[0, 5, 10, 15, 20, 30].map((m) => (
+                <option key={m} value={m}>
+                  {m === 0 ? "Sin descanso" : `${m} minutos`}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
       </div>
 
       <form
