@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   formatPrice,
   freeSpots,
+  isFullPass,
   monthlyTiers,
   otherRoleSpots,
   tierFor,
@@ -234,12 +235,13 @@ export default function ClassSelector({
   const n = selected.length;
   const tier = tierFor(tiers, n);
   const nextTier = tier ? tierFor(tiers, n + 1) : null;
-  const hint =
-    tier && nextTier && nextTier.plan.id !== tier.plan.id
-      ? `Añade otra clase por solo ${formatPrice(nextTier.plan.price_cents - tier.plan.price_cents, studio.currency)} más al mes`
-      : tier && tier.plan.classes_per_week === null
-        ? "Tienes el abono ilimitado: puedes añadir más clases sin coste extra"
-        : null;
+  const hint = isFullPass(tier)
+    ? "Tienes el Full pass: añade todas las clases que quieras, el precio no cambia"
+    : tier && nextTier && nextTier.plan.id !== tier.plan.id
+      ? isFullPass(nextTier)
+        ? `Con una clase más tienes el Full pass (todas las clases) por ${formatPrice(nextTier.plan.price_cents, studio.currency)} al mes`
+        : `Añade otra clase por solo ${formatPrice(nextTier.plan.price_cents - tier.plan.price_cents, studio.currency)} más al mes`
+      : null;
 
   // Una tarjeta de clase (en una misma hora puede haber varias, p. ej. en salas distintas)
   const renderCard = (s: ClassSeries) => {
@@ -659,7 +661,9 @@ export default function ClassSelector({
               <span className="text-sm font-semibold">
                 {n === 0
                   ? "0 clases"
-                  : n === 1
+                  : isFullPass(tier)
+                    ? `Full pass · ${n} ${n === 1 ? "clase" : "clases"}`
+                    : n === 1
                     ? "1 clase por semana"
                     : `${n} clases por semana`}
               </span>

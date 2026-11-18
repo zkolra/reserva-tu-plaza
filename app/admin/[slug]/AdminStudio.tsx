@@ -3,7 +3,8 @@
 import Link from "next/link";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { useCallback, useEffect, useState } from "react";
-import { formatPrice } from "@/lib/pricing";
+import { formatPrice, isFullPass, monthlyTiers, tierFor } from "@/lib/pricing";
+import type { Plan as PublicPlan } from "@/lib/types";
 import type { SupabaseConfig } from "@/lib/useAccount";
 import { useSession } from "@/lib/useSession";
 import LoginForm from "../LoginForm";
@@ -63,6 +64,7 @@ type Plan = {
   name: string;
   price_cents: number;
   classes_per_week: number | null;
+  class_count: number | null;
   active: boolean;
   sort: number;
 };
@@ -457,7 +459,7 @@ function AddStudent({
   onCancel: () => void;
 }) {
   const [series, setSeries] = useState<Series[]>([]);
-  const [plans, setPlans] = useState<{ classes_per_week: number | null; price_cents: number }[]>([]);
+  const [plans, setPlans] = useState<PublicPlan[]>([]);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -478,19 +480,17 @@ function AddStudent({
         .eq("active", true)
         .order("weekday")
         .order("start_time"),
-      sb.from("plans").select("classes_per_week, price_cents").eq("studio_id", studio.id).eq("kind", "monthly_by_classes").eq("active", true),
+      sb.from("plans").select("id, kind, name, price_cents, classes_per_week, class_count, sort").eq("studio_id", studio.id).eq("kind", "monthly_by_classes").eq("active", true),
     ]).then(([s, p]) => {
       setSeries((s.data ?? []) as Series[]);
-      setPlans(p.data ?? []);
+      setPlans((p.data ?? []) as PublicPlan[]);
     });
   }, [sb, studio.id]);
 
   const needsRole = series.some((x) => picked.includes(x.id) && x.uses_roles);
   const n = picked.length;
-  const plan =
-    plans.find((p) => p.classes_per_week === n) ??
-    plans.find((p) => p.classes_per_week === null) ??
-    [...plans].sort((a, b) => (b.classes_per_week ?? 0) - (a.classes_per_week ?? 0))[0];
+  const tier = tierFor(monthlyTiers(plans), n);
+  const plan = tier?.plan;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -609,7 +609,7 @@ function AddStudent({
 
       {n > 0 && plan && (
         <p className="text-sm">
-          Abono de {n} {n === 1 ? "clase" : "clases"} por semana: <b>{formatPrice(plan.price_cents, studio.currency)}</b> al mes
+          {isFullPass(tier) ? `${plan.name} (todas las clases)` : `Abono de ${n} ${n === 1 ? "clase" : "clases"} por semana`}: <b>{formatPrice(plan.price_cents, studio.currency)}</b> al mes
           {months > 1 ? ` · ${formatPrice(plan.price_cents * months, studio.currency)} por ${months} meses` : ""}
         </p>
       )}
@@ -1144,7 +1144,7 @@ function Prices({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
   const load = useCallback(async () => {
     const { data, error } = await sb
       .from("plans")
-      .select("id, kind, name, price_cents, classes_per_week, active, sort")
+      .select("id, kind, name, price_cents, classes_per_week, class_count, active, sort")
       .eq("studio_id", studio.id)
       .order("sort");
     if (error) setError(error.message);
@@ -1202,8 +1202,7 @@ function Prices({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
         Precios y formas de pago
       </h1>
       <p className="max-w-2xl text-sm text-muted">
-        Lo que está desactivado no aparece en tu web. En el abono mensual, deja
-        «Clases por semana» vacío para el abono ilimitado.
+        Lo que está desactivado no aparece en tu web.
       </p>
       {error && <ErrorBox text={error} />}
 
@@ -1242,7 +1241,7 @@ function Prices({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
       </p>
       <div className="flex flex-col gap-2">
         {(plans ?? [])
-          .filter((p) => p.kind !== "trial")
+          .filter((p) => p.kind !== "trial" && !(p.kind === "monthly_by_classes" && p.classes_per_week === null))
           .map((p) => (
             <PlanRow
               key={p.id}
@@ -1261,6 +1260,9 @@ function Prices({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
           + Añadir opción de abono
         </button>
       </div>
+
+      <h2 className="mt-2 text-lg font-bold">∞ Full pass</h2>
+      {plans && <FullPassBox key={plans.map((p) => p.id + p.price_cents + p.active).join()} sb={sb} studio={studio} />}
       <p className="text-xs text-muted">
         La suscripción (cobro automático cada mes) se configura en Ajustes →
         Renovación del abono.
@@ -1326,8 +1328,8 @@ function PlanRow({
           <input
             type="number"
             min={1}
+            required
             value={cpw}
-            placeholder="ilimitado"
             onChange={(e) => setCpw(e.target.value)}
             className={`${inputCls} w-32`}
           />
@@ -1358,6 +1360,147 @@ function PlanRow({
         {formatPrice(plan.price_cents, currency)}
       </span>
     </form>
+  );
+}
+
+/** Full pass = abono mensual sin número de clases (classes_per_week vacío).
+ *  class_count = desde cuántas clases se aplica; vacío = cuando sale igual o más barato que contar clases. */
+function FullPassBox({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
+  const [plan, setPlan] = useState<Plan | null | undefined>(undefined);
+  const [name, setName] = useState("Full pass");
+  const [price, setPrice] = useState("");
+  const [from, setFrom] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const { data } = await sb
+      .from("plans")
+      .select("id, kind, name, price_cents, classes_per_week, class_count, active, sort")
+      .eq("studio_id", studio.id)
+      .eq("kind", "monthly_by_classes")
+      .is("classes_per_week", null)
+      .order("sort")
+      .limit(1);
+    const p = (data?.[0] as Plan | undefined) ?? null;
+    setPlan(p);
+    if (p) {
+      setName(p.name);
+      setPrice(p.price_cents ? String(p.price_cents / 100) : "");
+      setFrom(p.class_count ? String(p.class_count) : "");
+    }
+  }, [sb, studio.id]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const on = !!plan?.active;
+
+  async function setOn(value: boolean) {
+    setError(null);
+    if (plan) {
+      const { error } = await sb.from("plans").update({ active: value }).eq("id", plan.id);
+      if (error) setError(error.message);
+    } else if (value) {
+      const { error } = await sb.from("plans").insert({
+        studio_id: studio.id,
+        kind: "monthly_by_classes",
+        name: "Full pass",
+        price_cents: 0,
+        classes_per_week: null,
+        class_count: null,
+        sort: 99,
+      });
+      if (error) setError(error.message);
+    }
+    load();
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (!plan) return;
+    setError(null);
+    const { error } = await sb
+      .from("plans")
+      .update({
+        name: name.trim() || "Full pass",
+        price_cents: Math.round(Number(price.replace(",", ".") || 0) * 100),
+        class_count: from === "" ? null : Number(from),
+      })
+      .eq("id", plan.id);
+    if (error) setError(error.message);
+    else {
+      setMsg("Guardado ✓");
+      setTimeout(() => setMsg(null), 1500);
+    }
+    load();
+  }
+
+  if (plan === undefined) return null;
+
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl bg-white p-5">
+      <p className="text-sm text-muted">
+        Un precio fijo al mes y el alumno va a todas las clases que quiera. Al elegir clases en tu web, el precio pasa
+        solo al Full pass cuando llega al número de clases que indiques o cuando sale más barato que pagar por clases.
+      </p>
+      <div className="flex gap-2" role="radiogroup" aria-label="¿Ofreces Full pass?">
+        {[true, false].map((v) => (
+          <button
+            key={String(v)}
+            type="button"
+            role="radio"
+            aria-checked={on === v}
+            onClick={() => on !== v && setOn(v)}
+            className={`h-11 rounded-xl px-5 text-sm font-bold ${on === v ? "bg-ink text-white" : "border border-line"}`}
+          >
+            {v ? "Sí, tenemos Full pass" : "No"}
+          </button>
+        ))}
+      </div>
+      {on && (
+        <form onSubmit={save} className="flex flex-wrap items-end gap-3">
+          <Field label="Nombre">
+            <input value={name} onChange={(e) => setName(e.target.value)} className={`${inputCls} w-44`} />
+          </Field>
+          <Field label="Clases por semana">
+            <span
+              className="flex h-11 w-24 items-center justify-center rounded-xl border border-line bg-paper text-2xl"
+              title="Todas las que quiera"
+            >
+              ∞
+            </span>
+          </Field>
+          <Field label={`Precio al mes (${studio.currency})`}>
+            <input
+              required
+              inputMode="decimal"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              className={`${inputCls} w-28`}
+            />
+          </Field>
+          <Field label="Se aplica desde (clases)">
+            <input
+              type="number"
+              min={1}
+              value={from}
+              placeholder="automático"
+              onChange={(e) => setFrom(e.target.value)}
+              className={`${inputCls} w-36`}
+            />
+          </Field>
+          <button type="submit" className="h-11 rounded-xl bg-ink px-4 text-sm font-bold text-white">
+            {msg ?? "Guardar"}
+          </button>
+        </form>
+      )}
+      {on && plan && plan.price_cents === 0 && (
+        <p className="text-sm font-semibold text-accent-text">Pon el precio del Full pass.</p>
+      )}
+      {error && <ErrorBox text={error} />}
+    </div>
   );
 }
 
@@ -1575,6 +1718,11 @@ function Settings({
           </button>
         </div>
       </form>
+
+      <div className="flex flex-col gap-2">
+        <h2 className="text-base font-bold">∞ Full pass</h2>
+        <FullPassBox sb={sb} studio={studio} />
+      </div>
 
       <fieldset className="rounded-2xl bg-white p-5">
         <legend className="sr-only">Renovación del abono</legend>

@@ -41,5 +41,5 @@ from s, (values
   ('monthly_by_classes', '1 clase por semana',  3500,  1,         null::int, 1),
   ('monthly_by_classes', '2 clases por semana', 6000,  2,         null,      2),
   ('monthly_by_classes', '3 clases por semana', 8500,  3,         null,      3),
-  ('monthly_by_classes', 'Ilimitado',           10000, null,      null,      4)
+  ('monthly_by_classes', 'Full pass',           10000, null,      null,      4)
 ) as v(kind, name, price, cpw, cc, sort);

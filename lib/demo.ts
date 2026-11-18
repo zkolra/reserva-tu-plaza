@@ -56,7 +56,7 @@ const plans: Plan[] = [
   { id: "p1", kind: "monthly_by_classes", name: "1 clase por semana", price_cents: 3500, classes_per_week: 1, class_count: null, sort: 1 },
   { id: "p2", kind: "monthly_by_classes", name: "2 clases por semana", price_cents: 6000, classes_per_week: 2, class_count: null, sort: 2 },
   { id: "p3", kind: "monthly_by_classes", name: "3 clases por semana", price_cents: 8500, classes_per_week: 3, class_count: null, sort: 3 },
-  { id: "p4", kind: "monthly_by_classes", name: "Ilimitado", price_cents: 10000, classes_per_week: null, class_count: null, sort: 4 },
+  { id: "p4", kind: "monthly_by_classes", name: "Full pass", price_cents: 10000, classes_per_week: null, class_count: null, sort: 4 },
 ];
 
 export const demoData: StudioData = {
