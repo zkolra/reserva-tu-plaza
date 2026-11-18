@@ -198,7 +198,11 @@ export default function AdminStudio({
 
 type MembershipRow = {
   id: string;
-  user_id: string;
+  user_id: string | null;
+  guest_name: string | null;
+  guest_email: string | null;
+  guest_phone: string | null;
+  payment_method: string;
   starts_on: string;
   auto_renew: boolean;
   ends_on: string | null;
@@ -224,13 +228,25 @@ function Students({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
   const [trials, setTrials] = useState<TrialRow[]>([]);
   const [emails, setEmails] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [reload, setReload] = useState(0);
+
+  async function cancelMembership(r: MembershipRow, who: string) {
+    if (!window.confirm(`¿Dar de baja a ${who}? Su abono termina hoy y su plaza queda libre.`)) return;
+    const { error } = await sb
+      .from("memberships")
+      .update({ status: "cancelled", ends_on: new Date().toISOString().slice(0, 10), auto_renew: false })
+      .eq("id", r.id);
+    if (error) setError(error.message);
+    setReload((n) => n + 1);
+  }
 
   useEffect(() => {
     (async () => {
       const { data, error } = await sb
         .from("memberships")
         .select(
-          "id, user_id, starts_on, auto_renew, ends_on, enrollment_fee_cents, plans(name, price_cents), membership_series(role, class_series(name, weekday, start_time))",
+          "id, user_id, guest_name, guest_email, guest_phone, payment_method, starts_on, auto_renew, ends_on, enrollment_fee_cents, plans(name, price_cents), membership_series(role, class_series(name, weekday, start_time))",
         )
         .eq("studio_id", studio.id)
         .eq("status", "active")
@@ -255,7 +271,7 @@ function Students({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
         .order("class_date");
       const trialList = (t ?? []) as unknown as TrialRow[];
       setTrials(trialList);
-      const ids = [...new Set([...list, ...trialList].map((r) => r.user_id))];
+      const ids = [...new Set([...list, ...trialList].map((r) => r.user_id).filter((x): x is string => !!x))];
       if (ids.length) {
         const { data: profiles } = await sb
           .from("profiles")
@@ -271,7 +287,7 @@ function Students({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
         );
       }
     })();
-  }, [sb, studio.id]);
+  }, [sb, studio.id, reload]);
 
   const monthly = (rows ?? []).reduce(
     (sum, r) => sum + (r.plans?.price_cents ?? 0),
@@ -280,10 +296,26 @@ function Students({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
 
   return (
     <section className="flex flex-col gap-5">
-      <h1 className="font-display text-2xl font-bold sm:text-3xl">
-        Alumnos con abono
-      </h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="font-display text-2xl font-bold sm:text-3xl">Alumnos con abono</h1>
+        {!adding && (
+          <button type="button" onClick={() => setAdding(true)} className="h-11 rounded-xl bg-accent px-4 text-sm font-bold text-on-accent">
+            + Añadir alumno
+          </button>
+        )}
+      </div>
       {error && <ErrorBox text={error} />}
+      {adding && (
+        <AddStudent
+          sb={sb}
+          studio={studio}
+          onDone={() => {
+            setAdding(false);
+            setReload((n) => n + 1);
+          }}
+          onCancel={() => setAdding(false)}
+        />
+      )}
       <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
         <Kpi label="Abonos activos" value={rows ? String(rows.length) : "…"} />
         <Kpi
@@ -309,6 +341,7 @@ function Students({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
                 <th className="py-2 pl-3 text-right font-semibold">
                   Precio / mes
                 </th>
+                <th className="py-2 pl-3"></th>
               </tr>
             </thead>
             <tbody>
@@ -319,7 +352,12 @@ function Students({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
                 return (
                   <tr key={r.id} className="border-t border-line align-top">
                     <td className="py-3 pr-3 font-semibold">
-                      {emails[r.user_id] ?? "…"}
+                      {(r.user_id && emails[r.user_id]) || r.guest_name || r.guest_email || "…"}
+                      {!r.user_id && (
+                        <div className="text-xs font-normal text-muted">
+                          {[r.guest_phone, r.guest_email].filter(Boolean).join(" · ") || "sin cuenta"}
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-3">
                       {r.membership_series.map((m, i) =>
@@ -340,6 +378,9 @@ function Students({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
                         : r.ends_on
                           ? `Hasta el ${new Date(r.ends_on).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}`
                           : "Mes a mes"}
+                      {PAYMENT_LABEL[r.payment_method] && (
+                        <div className="text-xs text-muted">{PAYMENT_LABEL[r.payment_method]}</div>
+                      )}
                     </td>
                     <td className="py-3 pl-3 text-right font-bold">
                       {r.plans
@@ -351,6 +392,15 @@ function Students({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
                           {formatPrice(r.enrollment_fee_cents, studio.currency)}
                         </div>
                       )}
+                    </td>
+                    <td className="py-3 pl-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => cancelMembership(r, (r.user_id && emails[r.user_id]) || r.guest_name || "este alumno")}
+                        className="whitespace-nowrap text-xs text-muted underline hover:text-accent-text"
+                      >
+                        Dar de baja
+                      </button>
                     </td>
                   </tr>
                 );
@@ -370,7 +420,7 @@ function Students({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
                 className="flex flex-wrap justify-between gap-2 border-t border-line py-2.5 text-sm"
               >
                 <span className="font-semibold">
-                  {emails[t.user_id] ?? "…"}
+                  {(t.user_id && emails[t.user_id]) || "…"}
                 </span>
                 <span>
                   {t.class_series?.name} ·{" "}
@@ -390,6 +440,189 @@ function Students({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
         </div>
       )}
     </section>
+  );
+}
+
+const PAYMENT_LABEL: Record<string, string> = { cash: "Efectivo", transfer: "Transferencia", other: "Otro pago" };
+
+function AddStudent({
+  sb,
+  studio,
+  onDone,
+  onCancel,
+}: {
+  sb: SupabaseClient;
+  studio: Studio;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [series, setSeries] = useState<Series[]>([]);
+  const [plans, setPlans] = useState<{ classes_per_week: number | null; price_cents: number }[]>([]);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [picked, setPicked] = useState<string[]>([]);
+  const [role, setRole] = useState("none");
+  const [months, setMonths] = useState(1);
+  const [payment, setPayment] = useState("cash");
+  const [enrollment, setEnrollment] = useState(studio.enrollment_fee_cents > 0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    Promise.all([
+      sb
+        .from("class_series")
+        .select("id, name, level, teachers, weekday, room_id, start_time, duration_min, uses_roles, capacity, capacity_leaders, capacity_followers, active")
+        .eq("studio_id", studio.id)
+        .eq("active", true)
+        .order("weekday")
+        .order("start_time"),
+      sb.from("plans").select("classes_per_week, price_cents").eq("studio_id", studio.id).eq("kind", "monthly_by_classes").eq("active", true),
+    ]).then(([s, p]) => {
+      setSeries((s.data ?? []) as Series[]);
+      setPlans(p.data ?? []);
+    });
+  }, [sb, studio.id]);
+
+  const needsRole = series.some((x) => picked.includes(x.id) && x.uses_roles);
+  const n = picked.length;
+  const plan =
+    plans.find((p) => p.classes_per_week === n) ??
+    plans.find((p) => p.classes_per_week === null) ??
+    [...plans].sort((a, b) => (b.classes_per_week ?? 0) - (a.classes_per_week ?? 0))[0];
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (n === 0) {
+      setError("Elige al menos una clase.");
+      return;
+    }
+    if (needsRole && role === "none") {
+      setError("Elige Leader o Follower.");
+      return;
+    }
+    setBusy(true);
+    const { error } = await sb.rpc("admin_create_membership", {
+      p_studio: studio.id,
+      p_series: picked,
+      p_role: needsRole ? role : "none",
+      p_name: name,
+      p_email: email,
+      p_phone: phone,
+      p_months: months,
+      p_payment: payment,
+      p_enrollment: enrollment,
+    });
+    setBusy(false);
+    if (error) setError(error.message);
+    else onDone();
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-4 rounded-2xl border-2 border-ink bg-white p-5">
+      <div>
+        <h2 className="text-lg font-bold">Añadir alumno</h2>
+        <p className="text-sm text-muted">
+          Para quien paga en la escuela. Si pones su email, cuando entre en la web verá su abono en «Mi cuenta».
+        </p>
+      </div>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
+        <Field label="Nombre">
+          <input required value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
+        </Field>
+        <Field label="Email (opcional)">
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
+        </Field>
+        <Field label="Teléfono (opcional)">
+          <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} />
+        </Field>
+      </div>
+
+      <div>
+        <div className="mb-2 text-xs font-bold text-muted">Clases</div>
+        {series.length === 0 ? (
+          <p className="text-sm text-muted">Primero crea las clases en «Clases».</p>
+        ) : (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
+            {series.map((x) => {
+              const on = picked.includes(x.id);
+              return (
+                <label
+                  key={x.id}
+                  className={`flex cursor-pointer items-start gap-2 rounded-xl border p-2.5 text-sm ${on ? "border-2 border-ink" : "border-line"}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={(e) => setPicked(e.target.checked ? [...picked, x.id] : picked.filter((id) => id !== x.id))}
+                    className="mt-0.5 h-4 w-4"
+                  />
+                  <span>
+                    <span className="block font-semibold">{x.name}</span>
+                    <span className="block text-xs text-muted">
+                      {DAYS.at(x.weekday - 1)} {hhmm(x.start_time)}
+                      {x.level ? ` · ${x.level}` : ""}
+                    </span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3">
+        {needsRole && (
+          <Field label="Rol">
+            <select value={role} onChange={(e) => setRole(e.target.value)} className={`${inputCls} w-40`}>
+              <option value="none">Elige…</option>
+              <option value="leader">Leader</option>
+              <option value="follower">Follower</option>
+            </select>
+          </Field>
+        )}
+        <Field label="Pagado por">
+          <select value={months} onChange={(e) => setMonths(Number(e.target.value))} className={`${inputCls} w-36`}>
+            {[1, 2, 3, 6, 12].map((m) => (
+              <option key={m} value={m}>
+                {m === 1 ? "1 mes" : `${m} meses`}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Forma de pago">
+          <select value={payment} onChange={(e) => setPayment(e.target.value)} className={`${inputCls} w-40`}>
+            <option value="cash">Efectivo</option>
+            <option value="transfer">Transferencia</option>
+            <option value="other">Otro</option>
+          </select>
+        </Field>
+        {studio.enrollment_fee_cents > 0 && (
+          <label className="flex h-11 items-center gap-2 text-sm font-semibold">
+            <input type="checkbox" checked={enrollment} onChange={(e) => setEnrollment(e.target.checked)} className="h-5 w-5" />
+            Pagó la matrícula ({formatPrice(studio.enrollment_fee_cents, studio.currency)})
+          </label>
+        )}
+      </div>
+
+      {n > 0 && plan && (
+        <p className="text-sm">
+          Abono de {n} {n === 1 ? "clase" : "clases"} por semana: <b>{formatPrice(plan.price_cents, studio.currency)}</b> al mes
+          {months > 1 ? ` · ${formatPrice(plan.price_cents * months, studio.currency)} por ${months} meses` : ""}
+        </p>
+      )}
+      {error && <ErrorBox text={error} />}
+      <div className="flex gap-2">
+        <button type="submit" disabled={busy} className="h-11 rounded-xl bg-accent px-5 text-sm font-bold text-on-accent disabled:opacity-40">
+          {busy ? "Guardando…" : "Añadir alumno"}
+        </button>
+        <button type="button" onClick={onCancel} className="h-11 rounded-xl border border-line px-5 text-sm font-bold">
+          Cancelar
+        </button>
+      </div>
+    </form>
   );
 }
 

@@ -20,6 +20,7 @@ type Series = {
 type RosterRow = {
   series_id: string;
   user_id: string | null;
+  membership_id: string | null;
   attendance_id: string | null;
   name: string;
   email: string | null;
@@ -90,7 +91,13 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
         await sb.from("class_attendance").delete().eq("id", row.attendance_id);
       }
     } else {
-      const { error } = await sb.rpc("set_attendance", { p_series: row.series_id, p_date: date, p_user: row.user_id, p_present: present });
+      const { error } = await sb.rpc("set_attendance_v2", {
+        p_series: row.series_id,
+        p_date: date,
+        p_user: row.user_id,
+        p_membership: row.user_id ? null : row.membership_id,
+        p_present: present,
+      });
       if (error) setError(error.message);
     }
     load();
@@ -99,12 +106,22 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
   async function markAll(seriesId: string) {
     const rows = (bySeries.get(seriesId) ?? []).filter((r) => r.kind !== "visitante" && r.present !== true);
     setRoster((prev) => prev.map((r) => (rows.includes(r) ? { ...r, present: true } : r)));
-    await Promise.all(rows.map((r) => sb.rpc("set_attendance", { p_series: seriesId, p_date: date, p_user: r.user_id, p_present: true })));
+    await Promise.all(
+      rows.map((r) =>
+        sb.rpc("set_attendance_v2", {
+          p_series: seriesId,
+          p_date: date,
+          p_user: r.user_id,
+          p_membership: r.user_id ? null : r.membership_id,
+          p_present: true,
+        }),
+      ),
+    );
     load();
   }
 
-  async function addGuest(seriesId: string, name: string) {
-    const { error } = await sb.rpc("add_attendance_guest", { p_series: seriesId, p_date: date, p_name: name });
+  async function addGuest(seriesId: string, name: string, role: string) {
+    const { error } = await sb.rpc("add_attendance_guest", { p_series: seriesId, p_date: date, p_name: name, p_role: role });
     if (error) setError(error.message);
     load();
   }
@@ -150,9 +167,10 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
         <div className="flex flex-col gap-3">
           {series.map((s) => {
             const rows = bySeries.get(s.id) ?? [];
-            const enrolled = rows.filter((r) => r.kind !== "visitante");
-            const leaders = enrolled.filter((r) => r.role === "leader").length;
-            const followers = enrolled.filter((r) => r.role === "follower").length;
+            const enrolled = rows;
+            const leaders = rows.filter((r) => r.role === "leader").length;
+            const followers = rows.filter((r) => r.role === "follower").length;
+            const extra = rows.filter((r) => r.kind === "visitante").length;
             const present = rows.filter((r) => r.present === true).length;
             const cap = s.uses_roles ? (s.capacity_leaders ?? 0) + (s.capacity_followers ?? 0) : (s.capacity ?? 0);
             const isOpen = open === s.id;
@@ -172,6 +190,7 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
                   <span className="text-sm">
                     <b>{enrolled.length}</b>
                     <span className="text-muted">/{cap} apuntados</span>
+                    {extra > 0 && <span className="text-muted"> · {extra} sin abono</span>}
                     {s.uses_roles && (
                       <span className="block text-xs text-muted">
                         {leaders} leaders · {followers} followers
@@ -180,7 +199,7 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
                   </span>
                   {!isFuture && (
                     <span className={`rounded-lg px-2.5 py-1 text-sm font-bold ${present > 0 ? "bg-ok-soft text-ok-text" : "bg-paper text-muted"}`}>
-                      {present} vinieron
+                      {present} {present === 1 ? "presente" : "presentes"}
                     </span>
                   )}
                   <span aria-hidden="true" className="text-muted">
@@ -192,9 +211,10 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
                   <Roster
                     rows={rows}
                     canMark={!isFuture}
+                    usesRoles={s.uses_roles}
                     onMark={mark}
                     onMarkAll={() => markAll(s.id)}
-                    onAddGuest={(name) => addGuest(s.id, name)}
+                    onAddGuest={(name, role) => addGuest(s.id, name, role)}
                   />
                 )}
               </div>
@@ -209,17 +229,20 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
 function Roster({
   rows,
   canMark,
+  usesRoles,
   onMark,
   onMarkAll,
   onAddGuest,
 }: {
   rows: RosterRow[];
   canMark: boolean;
+  usesRoles: boolean;
   onMark: (r: RosterRow, present: boolean | null) => void;
   onMarkAll: () => void;
-  onAddGuest: (name: string) => void;
+  onAddGuest: (name: string, role: string) => void;
 }) {
   const [guest, setGuest] = useState("");
+  const [guestRole, setGuestRole] = useState("none");
 
   return (
     <div className="border-t border-line p-4">
@@ -228,16 +251,21 @@ function Roster({
       ) : (
         <ul className="flex flex-col">
           {rows.map((r) => (
-            <li key={`${r.user_id ?? r.attendance_id}`} className="flex flex-wrap items-center gap-3 border-b border-line py-2.5 last:border-b-0">
+            <li key={`${r.user_id ?? r.membership_id ?? r.attendance_id}`} className="flex flex-wrap items-center gap-3 border-b border-line py-2.5 last:border-b-0">
               <span className="min-w-0 flex-1">
                 <span className="font-semibold">{r.name}</span>
                 <span className="ml-2 inline-flex flex-wrap gap-1 align-middle">
                   {r.kind === "prueba" && <Badge tone="blue">Clase de prueba</Badge>}
-                  {r.kind === "visitante" && <Badge tone="orange">Sin reserva</Badge>}
+                  {r.kind === "visitante" && <Badge tone="orange">Sin abono</Badge>}
                   {ROLE[r.role] && <Badge tone="gray">{ROLE[r.role]}</Badge>}
                 </span>
                 {(r.phone || r.email) && <span className="block text-xs text-muted">{[r.phone, r.email].filter(Boolean).join(" · ")}</span>}
               </span>
+              {!canMark && r.kind === "visitante" && (
+                <button type="button" onClick={() => onMark(r, null)} aria-label={`Quitar a ${r.name}`} className="h-11 rounded-xl px-3 text-muted hover:text-accent-text">
+                  ✕
+                </button>
+              )}
               {canMark && (
                 <span className="flex gap-1" role="group" aria-label={`Asistencia de ${r.name}`}>
                   <button
@@ -270,13 +298,13 @@ function Roster({
         </ul>
       )}
 
-      {canMark && (
+      {(
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
           <form
             onSubmit={(e) => {
               e.preventDefault();
               if (!guest.trim()) return;
-              onAddGuest(guest);
+              onAddGuest(guest, guestRole);
               setGuest("");
             }}
             className="flex flex-wrap items-center gap-2"
@@ -284,22 +312,38 @@ function Roster({
             <input
               value={guest}
               onChange={(e) => setGuest(e.target.value)}
-              placeholder="Vino alguien sin reserva"
-              aria-label="Nombre de alguien que vino sin reserva"
+              placeholder={canMark ? "Vino alguien sin abono" : "Apuntar a alguien sin abono"}
+              aria-label="Nombre de alguien sin abono"
               className="h-11 w-56 rounded-xl border border-line px-3 text-sm outline-none focus:border-ink"
             />
+            {usesRoles && (
+              <select
+                value={guestRole}
+                onChange={(e) => setGuestRole(e.target.value)}
+                aria-label="Rol"
+                className="h-11 rounded-xl border border-line bg-white px-2 text-sm"
+              >
+                <option value="none">Rol</option>
+                <option value="leader">Leader</option>
+                <option value="follower">Follower</option>
+              </select>
+            )}
             <button type="submit" className="h-11 rounded-xl border border-line px-3 text-sm font-bold">
               + Añadir
             </button>
           </form>
-          {rows.some((r) => r.kind !== "visitante" && r.present !== true) && (
+          {canMark && rows.some((r) => r.kind !== "visitante" && r.present !== true) && (
             <button type="button" onClick={onMarkAll} className="h-11 rounded-xl bg-ink px-4 text-sm font-bold text-white">
               Todos vinieron
             </button>
           )}
         </div>
       )}
-      {!canMark && <p className="mt-2 text-xs text-muted">La asistencia se marca el día de la clase.</p>}
+      {!canMark && (
+        <p className="mt-2 text-xs text-muted">
+          Puedes apuntar a alguien que vendrá (p. ej. a probar o pagó en efectivo). La asistencia se marca el día de la clase.
+        </p>
+      )}
     </div>
   );
 }
