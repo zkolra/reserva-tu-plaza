@@ -40,5 +40,7 @@ La base de datos (migración 0011) y la primera versión de las pantallas ya exi
 - Que el profesor no pueda tener una particular a la misma hora que una clase en grupo suya
   (hoy los profesores de grupo son texto libre; unificar con `teachers`).
 - Vista de calendario semanal de reservas en el panel.
-- Antelación mínima configurable (hoy fija: 2 h) y paso de los huecos (hoy: 30 min).
+- Antelación mínima configurable (hoy fija: 2 h).
+- Hecho (0014): cada cuánto empiezan las clases (según la duración / 15 / 30 / 60 min) y descanso entre clases.
+  La dueña prefiere flexibilidad (10:00 o 10:30); cada escuela lo elige en Ajustes.
 - Alquiler de salas sobre este mismo motor.
