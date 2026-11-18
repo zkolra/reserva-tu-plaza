@@ -15,6 +15,10 @@ export async function POST(request: Request) {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
+  const { data: who, error: authError } = await sb.auth.getUser(token);
+  if (authError || !who.user)
+    return Response.json({ sent: false, reason: `auth: ${authError?.message ?? "sin usuario"}` }, { status: 401 });
+
   const { data: m, error } = await sb
     .from("memberships")
     .select(
@@ -22,12 +26,13 @@ export async function POST(request: Request) {
     )
     .eq("id", membership)
     .maybeSingle();
-  if (error || !m) return Response.json({ sent: false, reason: "not_found" }, { status: 404 });
+  if (error || !m)
+    return Response.json({ sent: false, reason: error ? `db: ${error.message}` : "membership_not_visible" }, { status: 404 });
 
   type One<T> = T | T[] | null;
   const one = <T,>(x: One<T>) => (Array.isArray(x) ? x[0] : x) ?? null;
   const studio = one(m.studios as One<{ name: string; slug: string; accent_color: string | null; logo_url: string | null; contact_email: string | null }>);
-  if (!studio) return Response.json({ sent: false, reason: "not_found" }, { status: 404 });
+  if (!studio) return Response.json({ sent: false, reason: "studio_not_visible" }, { status: 404 });
 
   let email = m.guest_email as string | null;
   if (!email && m.user_id) {

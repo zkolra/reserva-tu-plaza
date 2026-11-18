@@ -537,7 +537,7 @@ function AddStudent({
         body: JSON.stringify({ membership: membershipId }),
       })
         .then((x) =>
-          x.ok || x.status === 404 || x.status === 400
+          x.ok || x.status === 404 || x.status === 400 || x.status === 401
             ? (x.json() as Promise<{ sent: boolean; reason?: string }>)
             : { sent: false, reason: `http_${x.status}` },
         )
