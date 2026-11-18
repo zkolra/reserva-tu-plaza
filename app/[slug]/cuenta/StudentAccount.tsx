@@ -45,6 +45,11 @@ const day = (iso: string) => {
 export default function StudentAccount({ studio, cfg }: { studio: AccountStudio; cfg: SupabaseConfig }) {
   const { sb, userId, email, ready } = useSession(cfg);
   const tz = studio.timezone || "Europe/Madrid";
+  // El email de bienvenida trae ?email=… : así sabemos para quién es el enlace
+  const [invited, setInvited] = useState("");
+  useEffect(() => {
+    setInvited((new URLSearchParams(window.location.search).get("email") ?? "").trim().toLowerCase());
+  }, []);
 
   const [memberships, setMemberships] = useState<Membership[] | null>(null);
   const [trial, setTrial] = useState<Trial | null>(null);
@@ -120,7 +125,7 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
 
   if (!sb) return <p className="p-10">La base de datos no está conectada.</p>;
   if (!ready) return <p className="p-10 text-muted">Cargando…</p>;
-  if (!email) return <LoginForm sb={sb} title="Mi cuenta" defaultMode="link" />;
+  if (!email) return <LoginForm key={invited} sb={sb} title="Mi cuenta" defaultMode="link" defaultEmail={invited} />;
 
   const today = new Date().toISOString().slice(0, 10);
   const active = (memberships ?? []).find((m) => m.status === "active" && (!m.ends_on || m.ends_on >= today)) ?? null;
@@ -143,6 +148,17 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
           </p>
         </div>
       </div>
+
+      {invited && invited !== email.toLowerCase() && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-ink bg-white px-4 py-3 text-sm">
+          <span>
+            Has entrado como <b>{email}</b>, pero tu abono es para <b>{invited}</b>.
+          </span>
+          <button type="button" onClick={() => sb.auth.signOut()} className="h-10 rounded-xl bg-ink px-4 font-bold text-white">
+            Entrar como {invited}
+          </button>
+        </div>
+      )}
 
       {msg && <p className="rounded-xl bg-ok-soft px-4 py-3 text-sm font-semibold text-ok-text">{msg}</p>}
       {error && <p className="rounded-xl bg-accent-soft px-4 py-3 text-sm font-semibold text-accent-text">{error}</p>}

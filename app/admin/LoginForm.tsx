@@ -8,13 +8,15 @@ export default function LoginForm({
   sb,
   title = "Panel del estudio",
   defaultMode = "password",
+  defaultEmail = "",
 }: {
   sb: SupabaseClient;
   title?: string;
   defaultMode?: "password" | "link";
+  defaultEmail?: string;
 }) {
   const [mode, setMode] = useState<"password" | "link">(defaultMode);
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(defaultEmail);
   const [password, setPassword] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);

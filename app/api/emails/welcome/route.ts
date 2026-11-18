@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     classes,
     planName: one(m.plans as One<{ name: string }>)?.name ?? null,
     endsOn: m.ends_on as string | null,
-    accountUrl: `${origin}/${studio.slug}/cuenta`,
+    accountUrl: `${origin}/${studio.slug}/cuenta?email=${encodeURIComponent(email)}`,
   });
   const result = await sendEmail({ to: email, ...mail, fromName: studio.name, replyTo: studio.contact_email });
   return Response.json(result);
