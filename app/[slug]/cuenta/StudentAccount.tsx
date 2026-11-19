@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import LoginForm from "@/app/admin/LoginForm";
 import { formatPrice } from "@/lib/pricing";
-import { formatDayLong, formatInTz } from "@/lib/private";
+import { formatDayLong, formatInTz, localDate } from "@/lib/private";
 import type { SupabaseConfig } from "@/lib/useAccount";
 import { useSession } from "@/lib/useSession";
 
@@ -32,6 +32,7 @@ type Membership = {
     class_series: { name: string; level: string | null; weekday: number; start_time: string; rooms: { name: string } | null } | null;
   }[];
 };
+type Att = { class_date: string; present: boolean | null; class_series: { name: string; start_time: string } | null };
 type Trial = { id: string; class_date: string; status: string; class_series: { name: string; start_time: string } | null };
 type PrivateB = { id: string; option_name: string; starts_at: string; status: string; meeting_url: string | null; price_cents: number };
 
@@ -57,6 +58,7 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
   const [memberships, setMemberships] = useState<Membership[] | null>(null);
   const [trial, setTrial] = useState<Trial | null>(null);
   const [privates, setPrivates] = useState<PrivateB[]>([]);
+  const [attendance, setAttendance] = useState<Att[]>([]);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +91,17 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
         .limit(30),
       sb.from("profiles").select("full_name, phone").eq("user_id", userId).maybeSingle(),
     ]);
+    // Solo la asistencia propia (el personal de la escuela podría ver la de todos)
+    const myIds = ((m.data ?? []) as { id: string }[]).map((x) => x.id);
+    const a = await sb
+      .from("class_attendance")
+      .select("class_date, present, class_series(name, start_time)")
+      .eq("studio_id", studio.id)
+      .not("present", "is", null)
+      .or(myIds.length ? `user_id.eq.${userId},membership_id.in.(${myIds.join(",")})` : `user_id.eq.${userId}`)
+      .order("class_date", { ascending: false })
+      .limit(200);
+    setAttendance((a.data ?? []) as unknown as Att[]);
     const firstError = [m, t, p].find((r) => r.error)?.error;
     if (firstError) setError(firstError.message);
     setMemberships((m.data ?? []) as unknown as Membership[]);
@@ -133,6 +146,38 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
   const today = new Date().toISOString().slice(0, 10);
   const active = (memberships ?? []).find((m) => m.status === "active" && (!m.ends_on || m.ends_on >= today)) ?? null;
   const past = (memberships ?? []).filter((m) => m !== active);
+  // Próximos 7 días: las clases del abono (y la clase de prueba)
+  const nowHm = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+  const week: { date: string; time: string; name: string; extra: string; trial?: boolean }[] = [];
+  for (let i = 0; i < 7; i++) {
+    const date = localDate(tz, i);
+    const [y, mo, d] = date.split("-").map(Number);
+    const isoDow = ((new Date(Date.UTC(y, mo - 1, d)).getUTCDay() + 6) % 7) + 1;
+    for (const ms of active?.membership_series ?? []) {
+      const c = ms.class_series;
+      if (!c || c.weekday !== isoDow) continue;
+      if (active?.ends_on && date > active.ends_on) continue;
+      if (i === 0 && hhmm(c.start_time) <= nowHm) continue;
+      week.push({
+        date,
+        time: hhmm(c.start_time),
+        name: c.name,
+        extra: [c.level, c.rooms?.name, ROLE[ms.role]].filter(Boolean).join(" · "),
+      });
+    }
+    if (trial && trial.status !== "cancelled" && trial.class_date === date && trial.class_series)
+      week.push({ date, time: hhmm(trial.class_series.start_time), name: trial.class_series.name, extra: "Clase de prueba", trial: true });
+  }
+  week.sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
+  const todayLocal = localDate(tz, 0);
+  const tomorrowLocal = localDate(tz, 1);
+  const dayLabel = (d: string) => (d === todayLocal ? "Hoy" : d === tomorrowLocal ? "Mañana" : formatDayLong(d));
+
+  // Asistencia
+  const monthPrefix = todayLocal.slice(0, 7);
+  const presentMonth = attendance.filter((x) => x.present && x.class_date.startsWith(monthPrefix)).length;
+  const presentTotal = attendance.filter((x) => x.present).length;
+
   const paidAtSchool = !!active && !!PAID_AT_SCHOOL[active.payment_method ?? ""];
   const nowIso = new Date().toISOString();
   const upcoming = privates.filter((p) => p.starts_at >= nowIso).reverse();
@@ -260,6 +305,57 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
         )}
       </section>
 
+      {/* ── Esta semana ── */}
+      {active && (
+        <section className="rounded-3xl bg-white p-5">
+          <h2 className="font-display text-xl font-bold">Mis próximas clases</h2>
+          {week.length === 0 ? (
+            <p className="mt-3 text-muted">No tienes clases en los próximos 7 días.</p>
+          ) : (
+            <ul className="mt-3 flex flex-col gap-2">
+              {week.map((w, k) => (
+                <li key={k} className="flex items-center gap-3 rounded-xl bg-paper px-3 py-2.5 text-sm">
+                  <span className="w-28 shrink-0 font-bold capitalize sm:w-44">{dayLabel(w.date)}</span>
+                  <span className="w-12 shrink-0 font-semibold">{w.time}</span>
+                  <span className="min-w-0">
+                    <b>{w.name}</b>
+                    {w.extra && <span className="text-muted"> · {w.extra}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {/* ── Asistencia ── */}
+      {attendance.length > 0 && (
+        <section className="rounded-3xl bg-white p-5">
+          <h2 className="font-display text-xl font-bold">Mi asistencia</h2>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <div className="rounded-xl bg-paper px-4 py-3">
+              <div className="text-xs font-semibold text-muted">Este mes</div>
+              <div className="font-display text-2xl font-bold">{presentMonth}</div>
+            </div>
+            <div className="rounded-xl bg-paper px-4 py-3">
+              <div className="text-xs font-semibold text-muted">En total</div>
+              <div className="font-display text-2xl font-bold">{presentTotal}</div>
+            </div>
+          </div>
+          <ul className="mt-3 flex flex-col">
+            {attendance.slice(0, 8).map((x, k) => (
+              <li key={k} className="flex justify-between gap-2 border-t border-line py-2 text-sm">
+                <span>
+                  <span className="capitalize">{formatDayLong(x.class_date)}</span>
+                  <span className="text-muted"> · {x.class_series?.name}</span>
+                </span>
+                <span className={x.present ? "font-semibold text-ok-text" : "text-muted"}>{x.present ? "Fui ✓" : "No fui"}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {/* ── Clase de prueba ── */}
       {trial && trial.status === "booked" && trial.class_date >= today && (
         <section className="rounded-3xl bg-white p-5">
@@ -355,8 +451,12 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
                   <span className="text-muted">
                     {" "}
                     · {day(m.starts_on)}
-                    {m.ends_on ? ` – ${day(m.ends_on)}` : ""}
+                    {m.ends_on && m.ends_on !== m.starts_on ? ` – ${day(m.ends_on)}` : ""}
+                    {PAID_AT_SCHOOL[m.payment_method ?? ""] ? ` · ${PAID_AT_SCHOOL[m.payment_method ?? ""]}` : ""}
                   </span>
+                  {m.status === "cancelled" && (
+                    <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-xs font-semibold text-muted">Cancelado</span>
+                  )}
                 </span>
                 <span className="text-muted">
                   {m.plans ? formatPrice(m.plans.price_cents, studio.currency) : ""}
