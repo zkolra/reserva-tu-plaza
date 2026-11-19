@@ -1,7 +1,7 @@
 "use client";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 /** Entrar al panel: con contraseña (el navegador puede guardarla) o con enlace por email. */
 export default function LoginForm({
@@ -16,6 +16,12 @@ export default function LoginForm({
   defaultEmail?: string;
 }) {
   const [mode, setMode] = useState<"password" | "link">(defaultMode);
+  // Quien ya entró una vez con contraseña ve directamente esa opción
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("rtp-login-mode") === "password") setMode("password");
+    } catch {}
+  }, []);
   const [email, setEmail] = useState(defaultEmail);
   const [password, setPassword] = useState("");
   const [sent, setSent] = useState(false);
@@ -35,6 +41,10 @@ export default function LoginForm({
             ? "Email o contraseña incorrectos. Si todavía no tienes contraseña, entra con el enlace por email y créala después."
             : error.message,
         );
+      } else {
+        try {
+          localStorage.setItem("rtp-login-mode", "password");
+        } catch {}
       }
       return;
     }
@@ -119,6 +129,11 @@ export default function LoginForm({
             {busy ? "Un momento…" : mode === "password" ? "Entrar" : "Enviarme el enlace"}
           </button>
           {error && <p className="text-sm font-semibold text-accent-text">{error}</p>}
+          {mode === "link" && (
+            <p className="text-sm text-muted">
+              La primera vez entra con el enlace. Después puedes crear una contraseña y entrar con ella.
+            </p>
+          )}
         </form>
       )}
     </main>

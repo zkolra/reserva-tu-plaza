@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import LoginForm from "@/app/admin/LoginForm";
+import PasswordBox from "@/components/PasswordBox";
 import { formatPrice } from "@/lib/pricing";
 import { formatDayLong, formatInTz, localDate } from "@/lib/private";
 import type { SupabaseConfig } from "@/lib/useAccount";
@@ -38,6 +39,7 @@ type PrivateB = { id: string; option_name: string; starts_at: string; status: st
 
 const DAYS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const hhmm = (t: string) => t.slice(0, 5);
+const cap = (x: string) => x.charAt(0).toUpperCase() + x.slice(1);
 const ROLE: Record<string, string> = { leader: "Leader", follower: "Follower" };
 const day = (iso: string) => {
   const [y, m, d] = iso.split("-").map(Number);
@@ -315,7 +317,7 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
             <ul className="mt-3 flex flex-col gap-2">
               {week.map((w, k) => (
                 <li key={k} className="flex items-center gap-3 rounded-xl bg-paper px-3 py-2.5 text-sm">
-                  <span className="w-28 shrink-0 font-bold capitalize sm:w-44">{dayLabel(w.date)}</span>
+                  <span className="w-28 shrink-0 font-bold sm:w-44">{cap(dayLabel(w.date))}</span>
                   <span className="w-12 shrink-0 font-semibold">{w.time}</span>
                   <span className="min-w-0">
                     <b>{w.name}</b>
@@ -346,7 +348,7 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
             {attendance.slice(0, 8).map((x, k) => (
               <li key={k} className="flex justify-between gap-2 border-t border-line py-2 text-sm">
                 <span>
-                  <span className="capitalize">{formatDayLong(x.class_date)}</span>
+                  <span>{cap(formatDayLong(x.class_date))}</span>
                   <span className="text-muted"> · {x.class_series?.name}</span>
                 </span>
                 <span className={x.present ? "font-semibold text-ok-text" : "text-muted"}>{x.present ? "Fui ✓" : "No fui"}</span>
@@ -363,8 +365,8 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm">
               <b>{trial.class_series?.name}</b>
-              <div className="capitalize text-muted">
-                {formatDayLong(trial.class_date)}
+              <div className="text-muted">
+                {cap(formatDayLong(trial.class_date))}
                 {trial.class_series ? ` · ${hhmm(trial.class_series.start_time)}` : ""}
               </div>
             </div>
@@ -393,7 +395,7 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
                 <li key={p.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-paper px-3 py-2.5 text-sm">
                   <span>
                     <b>{p.option_name}</b>
-                    <span className="block capitalize text-muted">{when(p.starts_at)}</span>
+                    <span className="block text-muted">{cap(when(p.starts_at))}</span>
                     <span className="text-xs text-muted">
                       {p.status === "pending" ? "Pendiente de confirmar" : "Confirmada"}
                       {p.meeting_url && (
@@ -439,6 +441,14 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
         </button>
       </form>
 
+      {/* ── Contraseña ── */}
+      <PasswordBox
+        sb={sb}
+        email={email}
+        title="Entrar más rápido"
+        text="Crea una contraseña y la próxima vez entra con tu email y contraseña, sin esperar el enlace. Tu navegador puede guardarla."
+      />
+
       {/* ── Historial ── */}
       {(past.length > 0 || pastPrivates.length > 0) && (
         <section className="rounded-3xl bg-white p-5">
@@ -468,7 +478,7 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
               <li key={p.id} className="flex flex-wrap justify-between gap-2 border-t border-line py-2.5 text-sm">
                 <span>
                   <b>{p.option_name}</b>
-                  <span className="capitalize text-muted"> · {when(p.starts_at)}</span>
+                  <span className="text-muted"> · {cap(when(p.starts_at))}</span>
                 </span>
                 <span className="text-muted">{formatPrice(p.price_cents, studio.currency)}</span>
               </li>

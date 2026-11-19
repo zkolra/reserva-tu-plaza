@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { useCallback, useEffect, useState } from "react";
 import { formatPrice, isFullPass, monthlyTiers, tierFor } from "@/lib/pricing";
 import type { Plan as PublicPlan } from "@/lib/types";
+import PasswordBox from "@/components/PasswordBox";
 import type { SupabaseConfig } from "@/lib/useAccount";
 import { useSession } from "@/lib/useSession";
 import LoginForm from "../LoginForm";
@@ -1693,7 +1694,7 @@ function Settings({
       <h1 className="font-display text-2xl font-bold sm:text-3xl">Ajustes</h1>
       {error && <ErrorBox text={error} />}
 
-      <PasswordBox sb={sb} />
+      <PasswordBox sb={sb} title="Tu contraseña" text="Para entrar al panel con email y contraseña, sin esperar el enlace. Tu navegador puede guardarla." />
 
       <form
         onSubmit={saveStudio}
@@ -2131,61 +2132,6 @@ function Appearance({
         </div>
       </div>
     </section>
-  );
-}
-
-function PasswordBox({ sb }: { sb: SupabaseClient }) {
-  const [password, setPassword] = useState("");
-  const [msg, setMsg] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    if (password.length < 8) {
-      setError("La contraseña debe tener al menos 8 caracteres.");
-      return;
-    }
-    const { error } = await sb.auth.updateUser({ password });
-    if (error) setError(error.message);
-    else {
-      setPassword("");
-      setMsg("Contraseña guardada ✓ Ya puedes entrar con ella.");
-    }
-  }
-
-  return (
-    <form
-      onSubmit={save}
-      className="flex flex-col gap-3 rounded-2xl bg-white p-5"
-    >
-      <div>
-        <h2 className="text-base font-bold">Tu contraseña</h2>
-        <p className="mt-1 text-sm text-muted">
-          Para entrar al panel con email y contraseña, sin esperar el enlace. Tu
-          navegador puede guardarla.
-        </p>
-      </div>
-      <div className="flex flex-wrap items-end gap-3">
-        <Field label="Nueva contraseña (mín. 8)">
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className={`${inputCls} w-64`}
-          />
-        </Field>
-        <button
-          type="submit"
-          className="h-11 rounded-xl bg-ink px-4 text-sm font-bold text-white"
-        >
-          Guardar contraseña
-        </button>
-      </div>
-      {msg && <p className="text-sm font-semibold text-ok-text">{msg}</p>}
-      {error && <ErrorBox text={error} />}
-    </form>
   );
 }
 
