@@ -43,7 +43,9 @@ export async function loadStudio(slug: string): Promise<StudioData | null> {
 
   if (!studio) return demo(slug, `el estudio «${slug}» no está en la base (¿se ejecutó seed.sql?)`);
 
-  const [modules, series, plans, availability, rooms] = await Promise.all([
+  const today = new Date().toISOString().slice(0, 10);
+  const in60 = new Date(Date.now() + 60 * 864e5).toISOString().slice(0, 10);
+  const [modules, series, plans, availability, rooms, cancellations] = await Promise.all([
     supabase.from("studio_modules").select("module, enabled").eq("studio_id", studio.id),
     supabase
       .from("class_series")
@@ -58,6 +60,13 @@ export async function loadStudio(slug: string): Promise<StudioData | null> {
       .order("sort"),
     supabase.rpc("series_availability", { p_studio: studio.id }),
     supabase.from("rooms").select("id, name").eq("studio_id", studio.id).order("name"),
+    supabase
+      .from("class_cancellations")
+      .select("series_id, date_from, date_to, reason")
+      .eq("studio_id", studio.id)
+      .gte("date_to", today)
+      .lte("date_from", in60)
+      .order("date_from"),
   ]);
 
   const firstError = [modules, series, plans, availability].find((r) => r.error)?.error;
@@ -72,6 +81,7 @@ export async function loadStudio(slug: string): Promise<StudioData | null> {
       ((availability.data ?? []) as Availability[]).map((a) => [a.series_id, a]),
     ),
     rooms: rooms.data ?? [],
+    cancellations: cancellations.error ? [] : (cancellations.data ?? []),
     isDemo: false,
   };
 }

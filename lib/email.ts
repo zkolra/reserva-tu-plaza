@@ -68,6 +68,50 @@ ${button(studio, d.accountUrl, "Entrar en Mi cuenta")}`;
   };
 }
 
+/** La escuela ha cancelado una clase concreta. */
+export function cancelledEmail(
+  studio: EmailStudio,
+  d: { className: string; dateLabel: string; time: string; reason: string | null; scheduleUrl: string },
+) {
+  const body = `<p style="margin:0 0 12px">¡Hola!</p>
+<p style="margin:0 0 12px">La clase de <b>${esc(d.className)}</b> del <b>${esc(d.dateLabel)} a las ${esc(d.time)}</b> queda <b>cancelada</b>.</p>
+${d.reason ? `<p style="margin:0 0 12px">Motivo: ${esc(d.reason)}</p>` : ""}
+<p style="margin:0">El resto de tus clases siguen como siempre. Sentimos las molestias.</p>
+${button(studio, d.scheduleUrl, "Ver mis clases")}`;
+  return { subject: `Clase cancelada: ${d.className}, ${d.dateLabel}`, html: layout(studio, body) };
+}
+
+/** Varios correos de una vez (hasta 100 por llamada). */
+export async function sendEmailBatch(
+  emails: { to: string; subject: string; html: string }[],
+  fromName: string,
+  replyTo?: string | null,
+): Promise<{ sent: number; reason?: string }> {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) return { sent: 0, reason: "not_configured" };
+  let sent = 0;
+  for (let i = 0; i < emails.length; i += 100) {
+    const chunk = emails.slice(i, i + 100).map((e) => ({
+      from: `${fromName.replace(/[<>"]/g, "")} <${EMAIL_FROM_ADDRESS}>`,
+      to: [e.to],
+      subject: e.subject,
+      html: e.html,
+      ...(replyTo ? { reply_to: replyTo } : {}),
+    }));
+    const res = await fetch("https://api.resend.com/emails/batch", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify(chunk),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      return { sent, reason: `resend_${res.status} ${detail.slice(0, 200)}` };
+    }
+    sent += chunk.length;
+  }
+  return { sent };
+}
+
 /** Envía con Resend. Sin RESEND_API_KEY no hace nada (devuelve false). */
 export async function sendEmail(opts: {
   to: string;

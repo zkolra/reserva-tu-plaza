@@ -29,6 +29,7 @@ type Membership = {
   enrollment_fee_cents: number;
   plans: { name: string; price_cents: number } | null;
   membership_series: {
+    series_id: string;
     role: string;
     class_series: { name: string; level: string | null; weekday: number; start_time: string; rooms: { name: string } | null } | null;
   }[];
@@ -61,6 +62,7 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
   const [trial, setTrial] = useState<Trial | null>(null);
   const [privates, setPrivates] = useState<PrivateB[]>([]);
   const [attendance, setAttendance] = useState<Att[]>([]);
+  const [cancels, setCancels] = useState<{ series_id: string | null; date_from: string; date_to: string; reason: string | null }[]>([]);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +74,7 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
       sb
         .from("memberships")
         .select(
-          "id, status, starts_on, ends_on, auto_renew, payment_method, enrollment_fee_cents, plans(name, price_cents), membership_series(role, class_series(name, level, weekday, start_time, rooms(name)))",
+          "id, status, starts_on, ends_on, auto_renew, payment_method, enrollment_fee_cents, plans(name, price_cents), membership_series(series_id, role, class_series(name, level, weekday, start_time, rooms(name)))",
         )
         .eq("studio_id", studio.id)
         .eq("user_id", userId)
@@ -93,6 +95,12 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
         .limit(30),
       sb.from("profiles").select("full_name, phone").eq("user_id", userId).maybeSingle(),
     ]);
+    const cx = await sb
+      .from("class_cancellations")
+      .select("series_id, date_from, date_to, reason")
+      .eq("studio_id", studio.id)
+      .gte("date_to", localDate(tz, 0));
+    setCancels(cx.data ?? []);
     // Solo la asistencia propia (el personal de la escuela podría ver la de todos)
     const myIds = ((m.data ?? []) as { id: string }[]).map((x) => x.id);
     const a = await sb
@@ -111,7 +119,7 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
     setPrivates((p.data ?? []) as PrivateB[]);
     setName(prof.data?.full_name ?? "");
     setPhone(prof.data?.phone ?? "");
-  }, [sb, userId, studio.id]);
+  }, [sb, userId, studio.id, tz]);
 
   useEffect(() => {
     load();
@@ -150,7 +158,11 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
   const past = (memberships ?? []).filter((m) => m !== active);
   // Próximos 7 días: las clases del abono (y la clase de prueba)
   const nowHm = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
-  const week: { date: string; time: string; name: string; extra: string; trial?: boolean }[] = [];
+  const week: { date: string; time: string; name: string; extra: string; trial?: boolean; cancelled?: string }[] = [];
+  const cancelReason = (seriesId: string | undefined, date: string) => {
+    const c = cancels.find((x) => date >= x.date_from && date <= x.date_to && (x.series_id === null || x.series_id === seriesId));
+    return c ? c.reason || "Sin clase" : undefined;
+  };
   for (let i = 0; i < 7; i++) {
     const date = localDate(tz, i);
     const [y, mo, d] = date.split("-").map(Number);
@@ -162,13 +174,14 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
       if (i === 0 && hhmm(c.start_time) <= nowHm) continue;
       week.push({
         date,
+        cancelled: cancelReason(ms.series_id, date),
         time: hhmm(c.start_time),
         name: c.name,
         extra: [c.level, c.rooms?.name, ROLE[ms.role]].filter(Boolean).join(" · "),
       });
     }
     if (trial && trial.status !== "cancelled" && trial.class_date === date && trial.class_series)
-      week.push({ date, time: hhmm(trial.class_series.start_time), name: trial.class_series.name, extra: "Clase de prueba", trial: true });
+      week.push({ date, time: hhmm(trial.class_series.start_time), name: trial.class_series.name, extra: "Clase de prueba", trial: true, cancelled: cancelReason(undefined, date) });
   }
   week.sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
   const todayLocal = localDate(tz, 0);
@@ -316,12 +329,15 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
           ) : (
             <ul className="mt-3 flex flex-col gap-2">
               {week.map((w, k) => (
-                <li key={k} className="flex items-center gap-3 rounded-xl bg-paper px-3 py-2.5 text-sm">
+                <li key={k} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm ${w.cancelled ? "bg-accent-soft/50" : "bg-paper"}`}>
                   <span className="w-28 shrink-0 font-bold sm:w-44">{cap(dayLabel(w.date))}</span>
                   <span className="w-12 shrink-0 font-semibold">{w.time}</span>
                   <span className="min-w-0">
                     <b>{w.name}</b>
                     {w.extra && <span className="text-muted"> · {w.extra}</span>}
+                    {w.cancelled && (
+                      <span className="block font-semibold text-accent-text">Cancelada · {w.cancelled}</span>
+                    )}
                   </span>
                 </li>
               ))}

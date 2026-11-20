@@ -1543,6 +1543,111 @@ function FullPassBox({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
   );
 }
 
+/** Festivos y cierres: días en que no hay ninguna clase. */
+function HolidaysBox({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
+  type Closure = { id: string; date_from: string; date_to: string; reason: string | null };
+  const today = new Date().toISOString().slice(0, 10);
+  const [list, setList] = useState<Closure[] | null>(null);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const { data, error } = await sb
+      .from("class_cancellations")
+      .select("id, date_from, date_to, reason")
+      .eq("studio_id", studio.id)
+      .is("series_id", null)
+      .gte("date_to", today)
+      .order("date_from");
+    if (error) setError(error.message);
+    setList((data ?? []) as Closure[]);
+  }, [sb, studio.id, today]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function add(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const end = to || from;
+    if (!from) return;
+    if (end < from) {
+      setError("La fecha final no puede ser antes que la inicial.");
+      return;
+    }
+    const { error } = await sb
+      .from("class_cancellations")
+      .insert({ studio_id: studio.id, series_id: null, date_from: from, date_to: end, reason: reason.trim() || null });
+    if (error) setError(error.message);
+    else {
+      setFrom("");
+      setTo("");
+      setReason("");
+    }
+    load();
+  }
+
+  async function remove(c: Closure) {
+    if (!window.confirm("¿Quitar este cierre? Ese día volverá a haber clases.")) return;
+    const { error } = await sb.from("class_cancellations").delete().eq("id", c.id);
+    if (error) setError(error.message);
+    load();
+  }
+
+  const fmt = (iso: string) => {
+    const [y, m, d] = iso.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d, 12)).toLocaleDateString("es-ES", { weekday: "short", day: "numeric", month: "long", timeZone: "UTC" });
+  };
+
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl bg-white p-5">
+      <div>
+        <h2 className="text-base font-bold">Días sin clase</h2>
+        <p className="mt-1 text-sm text-muted">
+          Festivos, vacaciones, cierres. Esos días no hay ninguna clase: lo ven los alumnos en el horario y en «Mi cuenta».
+          Para cancelar solo una clase, ve a Asistencia, abre ese día y pulsa «Cancelar esta clase».
+        </p>
+      </div>
+      {list && list.length > 0 && (
+        <ul className="flex flex-col">
+          {list.map((c) => (
+            <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-line py-2 text-sm">
+              <span>
+                <b>{c.reason || "Cerrado"}</b>
+                <span className="text-muted">
+                  {" "}
+                  · {c.date_from === c.date_to ? fmt(c.date_from) : `${fmt(c.date_from)} – ${fmt(c.date_to)}`}
+                </span>
+              </span>
+              <button type="button" onClick={() => remove(c)} aria-label="Quitar" className="text-muted hover:text-accent-text">
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form onSubmit={add} className="flex flex-wrap items-end gap-3">
+        <Field label="Desde">
+          <input type="date" required min={today} value={from} onChange={(e) => setFrom(e.target.value)} className={`${inputCls} w-44`} />
+        </Field>
+        <Field label="Hasta (si son varios días)">
+          <input type="date" min={from || today} value={to} onChange={(e) => setTo(e.target.value)} className={`${inputCls} w-44`} />
+        </Field>
+        <Field label="Motivo">
+          <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Navidad, festivo…" className={`${inputCls} w-48`} />
+        </Field>
+        <button type="submit" className="h-11 rounded-xl bg-ink px-4 text-sm font-bold text-white">
+          Añadir
+        </button>
+      </form>
+      {error && <ErrorBox text={error} />}
+    </div>
+  );
+}
+
 /* ───────────────────────── Ajustes ───────────────────────── */
 
 const RENEWAL: [Studio["renewal_mode"], string, string][] = [
@@ -1771,6 +1876,8 @@ function Settings({
           </button>
         </div>
       </form>
+
+      <HolidaysBox sb={sb} studio={studio} />
 
       <div className="flex flex-col gap-2">
         <h2 className="text-base font-bold">∞ Full pass</h2>

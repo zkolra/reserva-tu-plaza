@@ -30,7 +30,13 @@ type RosterRow = {
   present: boolean | null;
 };
 
+type Cancellation = { id: string; series_id: string | null; reason: string | null; date_from: string; date_to: string };
+
 const hhmm = (t: string) => t.slice(0, 5);
+const shortDay = (iso: string) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d, 12)).toLocaleDateString("es-ES", { day: "numeric", month: "short", timeZone: "UTC" });
+};
 const ROLE: Record<string, string> = { leader: "Leader", follower: "Follower", none: "" };
 
 function addDays(iso: string, n: number) {
@@ -51,10 +57,12 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cancellations, setCancellations] = useState<Cancellation[]>([]);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
-    const [s, r] = await Promise.all([
+    const [s, r, c] = await Promise.all([
       sb
         .from("class_series")
         .select("id, name, level, teachers, start_time, duration_min, uses_roles, capacity, capacity_leaders, capacity_followers, rooms(name)")
@@ -63,7 +71,14 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
         .eq("weekday", isoWeekday(date))
         .order("start_time"),
       sb.rpc("class_roster_day", { p_studio: studio.id, p_date: date }),
+      sb
+        .from("class_cancellations")
+        .select("id, series_id, reason, date_from, date_to")
+        .eq("studio_id", studio.id)
+        .lte("date_from", date)
+        .gte("date_to", date),
     ]);
+    setCancellations((c.data ?? []) as Cancellation[]);
     if (s.error || r.error) setError((s.error ?? r.error)!.message);
     setSeries((s.data ?? []) as unknown as Series[]);
     setRoster((r.data ?? []) as RosterRow[]);
@@ -127,6 +142,46 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
   }
 
   const isFuture = date > today;
+  const closure = cancellations.find((c) => c.series_id === null) ?? null;
+  const cancelledOf = (seriesId: string) => closure ?? cancellations.find((c) => c.series_id === seriesId) ?? null;
+
+  async function cancelClass(seriesId: string, reason: string, notify: boolean) {
+    setError(null);
+    setNotice(null);
+    const { error } = await sb
+      .from("class_cancellations")
+      .insert({ studio_id: studio.id, series_id: seriesId, date_from: date, date_to: date, reason: reason.trim() || null });
+    if (error) {
+      setError(error.message);
+      return;
+    }
+    if (notify) {
+      const { data: ses } = await sb.auth.getSession();
+      const r = await fetch("/api/emails/cancelled", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${ses.session?.access_token ?? ""}` },
+        body: JSON.stringify({ series: seriesId, date }),
+      })
+        .then((x) => x.json() as Promise<{ sent: number; reason?: string }>)
+        .catch(() => ({ sent: 0, reason: "network" }));
+      setNotice(
+        r.sent > 0
+          ? `Clase cancelada. Hemos avisado por email a ${r.sent} ${r.sent === 1 ? "alumno" : "alumnos"}.`
+          : r.reason === "nobody"
+            ? "Clase cancelada. Nadie apuntado tenía email."
+            : `Clase cancelada, pero no se pudieron enviar los emails (${r.reason ?? "error"}).`,
+      );
+    } else setNotice("Clase cancelada.");
+    load();
+  }
+
+  async function undoCancel(c: Cancellation) {
+    if (!window.confirm("¿Volver a poner esta clase? Si avisaste a los alumnos, diles que sí hay clase.")) return;
+    const { error } = await sb.from("class_cancellations").delete().eq("id", c.id);
+    if (error) setError(error.message);
+    setNotice(null);
+    load();
+  }
 
   return (
     <section className="flex flex-col gap-5">
@@ -158,6 +213,16 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
         {formatDayLong(date)}
       </p>
       {error && <p className="rounded-xl bg-accent-soft px-3 py-2 text-sm font-semibold text-accent-text">{error}</p>}
+      {notice && <p className="rounded-xl bg-ok-soft px-3 py-2 text-sm font-semibold text-ok-text">{notice}</p>}
+      {closure && (
+        <p className="rounded-2xl border-2 border-ink bg-white p-4 text-sm">
+          <b>Escuela cerrada{closure.reason ? `: ${closure.reason}` : ""}</b>
+          <span className="text-muted">
+            {" "}
+            · {closure.date_from === closure.date_to ? shortDay(closure.date_from) : `${shortDay(closure.date_from)} – ${shortDay(closure.date_to)}`}. Se cambia en Ajustes → Días sin clase.
+          </span>
+        </p>
+      )}
 
       {series === null ? (
         <p className="text-muted">Cargando…</p>
@@ -174,17 +239,18 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
             const present = rows.filter((r) => r.present === true).length;
             const cap = s.uses_roles ? (s.capacity_leaders ?? 0) + (s.capacity_followers ?? 0) : (s.capacity ?? 0);
             const isOpen = open === s.id;
+            const cancelled = cancelledOf(s.id);
             return (
-              <div key={s.id} className="overflow-hidden rounded-2xl bg-white">
+              <div key={s.id} className={`overflow-hidden rounded-2xl bg-white ${cancelled ? "opacity-70" : ""}`}>
                 <button
                   type="button"
                   aria-expanded={isOpen}
                   onClick={() => setOpen(isOpen ? null : s.id)}
                   className="flex w-full flex-wrap items-center gap-x-6 gap-y-2 p-4 text-left hover:bg-paper"
                 >
-                  <span className="w-14 text-lg font-bold">{hhmm(s.start_time)}</span>
+                  <span className={`w-14 text-lg font-bold ${cancelled ? "line-through" : ""}`}>{hhmm(s.start_time)}</span>
                   <span className="min-w-0 flex-1">
-                    <span className="block font-bold">{s.name}</span>
+                    <span className={`block font-bold ${cancelled ? "line-through" : ""}`}>{s.name}</span>
                     <span className="block text-xs text-muted">{[s.level, s.teachers, s.rooms?.name].filter(Boolean).join(" · ")}</span>
                   </span>
                   <span className="text-sm">
@@ -197,7 +263,10 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
                       </span>
                     )}
                   </span>
-                  {!isFuture && (
+                  {cancelled && (
+                    <span className="rounded-lg bg-accent-soft px-2.5 py-1 text-sm font-bold text-accent-text">Cancelada</span>
+                  )}
+                  {!isFuture && !cancelled && (
                     <span className={`rounded-lg px-2.5 py-1 text-sm font-bold ${present > 0 ? "bg-ok-soft text-ok-text" : "bg-paper text-muted"}`}>
                       {present} {present === 1 ? "presente" : "presentes"}
                     </span>
@@ -207,6 +276,16 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
                   </span>
                 </button>
 
+                {isOpen && (
+                  <CancelBar
+                    cancelled={cancelled}
+                    isClosure={!!closure}
+                    canCancel={date >= today}
+                    withEmail={rows.filter((r) => r.email).length}
+                    onCancel={(reason, notify) => cancelClass(s.id, reason, notify)}
+                    onUndo={() => cancelled && undoCancel(cancelled)}
+                  />
+                )}
                 {isOpen && (
                   <Roster
                     rows={rows}
@@ -223,6 +302,82 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
         </div>
       )}
     </section>
+  );
+}
+
+function CancelBar({
+  cancelled,
+  isClosure,
+  canCancel,
+  withEmail,
+  onCancel,
+  onUndo,
+}: {
+  cancelled: Cancellation | null;
+  isClosure: boolean;
+  canCancel: boolean;
+  withEmail: number;
+  onCancel: (reason: string, notify: boolean) => void;
+  onUndo: () => void;
+}) {
+  const [asking, setAsking] = useState(false);
+  const [reason, setReason] = useState("");
+  const [notify, setNotify] = useState(true);
+
+  if (cancelled)
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-accent-soft/40 px-4 py-3 text-sm">
+        <span>
+          <b>Clase cancelada</b>
+          {cancelled.reason ? <span className="text-muted"> · {cancelled.reason}</span> : null}
+        </span>
+        {!isClosure && (
+          <button type="button" onClick={onUndo} className="font-bold underline">
+            Deshacer
+          </button>
+        )}
+      </div>
+    );
+  if (!canCancel) return null;
+  if (!asking)
+    return (
+      <div className="flex justify-end border-t border-line px-4 py-2">
+        <button type="button" onClick={() => setAsking(true)} className="text-sm font-semibold text-muted underline hover:text-accent-text">
+          Cancelar esta clase
+        </button>
+      </div>
+    );
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        onCancel(reason, notify && withEmail > 0);
+        setAsking(false);
+      }}
+      className="flex flex-col gap-3 border-t border-line bg-paper px-4 py-4"
+    >
+      <b className="text-sm">¿Cancelar solo esta clase de este día?</b>
+      <input
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="Motivo (opcional), p. ej. «El profe está enfermo»"
+        className="h-11 rounded-xl border border-line bg-white px-3 text-sm"
+      />
+      {withEmail > 0 && (
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} className="h-5 w-5" />
+          Avisar por email a los apuntados ({withEmail})
+        </label>
+      )}
+      <div className="flex gap-2">
+        <button type="submit" className="h-11 rounded-xl bg-ink px-4 text-sm font-bold text-white">
+          Cancelar la clase
+        </button>
+        <button type="button" onClick={() => setAsking(false)} className="h-11 rounded-xl border border-line bg-white px-4 text-sm font-bold">
+          No, volver
+        </button>
+      </div>
+    </form>
   );
 }
 

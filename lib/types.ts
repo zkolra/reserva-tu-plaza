@@ -52,6 +52,8 @@ export type StudioData = {
   plans: Plan[];
   availability: Record<string, Availability>;
   rooms: { id: string; name: string }[];
+  /** Próximos cierres y clases canceladas (vacío si la migración 0019 aún no está). */
+  cancellations?: { series_id: string | null; date_from: string; date_to: string; reason: string | null }[];
   isDemo: boolean;
   /** Por qué se muestran datos de ejemplo en lugar de la base (para diagnosticar). */
   demoReason?: string;

@@ -341,6 +341,29 @@ export default function ClassSelector({
           : "Marca las clases a las que quieres venir cada semana. El precio de tu abono se calcula solo."}
       </p>
 
+      {(data.cancellations ?? []).length > 0 && (
+        <ul className="mt-4 flex max-w-2xl flex-col gap-1.5" aria-label="Avisos">
+          {(data.cancellations ?? []).slice(0, 5).map((c, i) => {
+            const fmt = (iso: string) => {
+              const [y, m, d] = iso.split("-").map(Number);
+              return new Date(Date.UTC(y, m - 1, d, 12)).toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+            };
+            const cls = c.series_id ? data.series.find((x) => x.id === c.series_id) : null;
+            if (c.series_id && !cls) return null;
+            return (
+              <li key={i} className="rounded-xl border border-line bg-white px-3 py-2 text-sm">
+                <b>{cls ? `${cls.name} ${cls.start_time.slice(0, 5)}: cancelada` : `Sin clases${c.reason ? ` · ${c.reason}` : ""}`}</b>
+                <span className="text-muted">
+                  {" "}
+                  · {c.date_from === c.date_to ? fmt(c.date_from) : `del ${fmt(c.date_from)} al ${fmt(c.date_to)}`}
+                  {cls && c.reason ? ` · ${c.reason}` : ""}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
       {canTrial && trial && (
         <div
           className="mt-5 inline-flex flex-wrap gap-1 rounded-2xl bg-white p-1"
