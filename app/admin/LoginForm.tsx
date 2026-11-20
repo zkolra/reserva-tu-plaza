@@ -45,6 +45,8 @@ export default function LoginForm({
         try {
           localStorage.setItem("rtp-login-mode", "password");
         } catch {}
+        // Si entró con contraseña, la tiene: así «Ya tienes contraseña ✓» sale también en cuentas antiguas
+        sb.auth.updateUser({ data: { has_password: true } });
       }
       return;
     }

@@ -53,6 +53,11 @@ export default function PasswordBox({
       <div>
         <h2 className="font-display text-xl font-bold">{title}</h2>
         <p className="mt-1 text-sm text-muted">{text}</p>
+        {hasPassword === false && !msg && (
+          <p className="mt-2 text-sm">
+            <b>Todavía no tienes contraseña</b> (o la creaste antes de esta versión: guárdala otra vez y quedará marcada).
+          </p>
+        )}
       </div>
       {hasPassword && !editing ? (
         <div className="flex flex-wrap items-center gap-3">
@@ -61,7 +66,8 @@ export default function PasswordBox({
             Cambiarla
           </button>
           <span className="w-full text-xs text-muted">
-            Por seguridad nadie puede ver tu contraseña, ni la escuela. Si la olvidas, entra con el enlace por email y crea otra.
+            Por seguridad la contraseña se guarda cifrada: nadie puede verla, ni tú, ni la escuela. Si tu navegador la guardó, la ves en
+            su gestor de contraseñas (Chrome: Ajustes → Contraseñas). Si la olvidas, entra con el enlace por email y pon otra.
           </span>
         </div>
       ) : (
