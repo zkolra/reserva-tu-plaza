@@ -1671,6 +1671,42 @@ function FullPassBox({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
   );
 }
 
+/** Modo prueba: los alumnos ven un aviso con el email de la escuela. */
+function TestModeBox({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    sb.from("studios")
+      .select("test_mode")
+      .eq("id", studio.id)
+      .maybeSingle()
+      .then(({ data, error }) => setOn(error ? null : !!data?.test_mode));
+  }, [sb, studio.id]);
+  if (on === null) return null;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white p-5">
+      <div className="max-w-xl">
+        <h2 className="text-base font-bold">Modo prueba</h2>
+        <p className="mt-1 text-sm text-muted">
+          Tus alumnos verán arriba: «Estamos probando el sistema. Si algo no funciona, escríbenos» con el email de la escuela.
+          Útil las primeras semanas.
+        </p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        onClick={async () => {
+          const { error } = await sb.from("studios").update({ test_mode: !on }).eq("id", studio.id);
+          if (!error) setOn(!on);
+        }}
+        className={`h-11 rounded-xl px-5 text-sm font-bold ${on ? "bg-few text-white" : "border border-line"}`}
+      >
+        {on ? "Activado" : "Desactivado"}
+      </button>
+    </div>
+  );
+}
+
 /** Mes natural o 30 días, y qué paga quien empieza a mitad de mes. */
 function AbonoPeriodBox({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
   type Cfg = { abono_period: "calendar" | "rolling"; prorate_mode: "proportional" | "per_class"; single_class_cents: number; next_month_from_day: number | null };
@@ -2137,6 +2173,8 @@ function Settings({
           </button>
         </div>
       </form>
+
+      <TestModeBox sb={sb} studio={studio} />
 
       <AbonoPeriodBox sb={sb} studio={studio} />
 

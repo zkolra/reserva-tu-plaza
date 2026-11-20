@@ -1,6 +1,7 @@
 "use client";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import InstallApp from "@/components/InstallApp";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatDayLong, localDate } from "@/lib/private";
 
@@ -59,6 +60,7 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
   const [error, setError] = useState<string | null>(null);
   const [cancellations, setCancellations] = useState<Cancellation[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
+  const [rsvp, setRsvp] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
     setError(null);
@@ -79,6 +81,8 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
         .gte("date_to", date),
     ]);
     setCancellations((c.data ?? []) as Cancellation[]);
+    const rv = await sb.from("class_rsvp").select("series_id, user_id, going").eq("studio_id", studio.id).eq("class_date", date);
+    setRsvp(rv.error ? {} : Object.fromEntries((rv.data ?? []).map((x) => [`${x.series_id}|${x.user_id}`, x.going as boolean])));
     if (s.error || r.error) setError((s.error ?? r.error)!.message);
     setSeries((s.data ?? []) as unknown as Series[]);
     setRoster((r.data ?? []) as RosterRow[]);
@@ -214,6 +218,7 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
       </p>
       {error && <p className="rounded-xl bg-accent-soft px-3 py-2 text-sm font-semibold text-accent-text">{error}</p>}
       {notice && <p className="rounded-xl bg-ok-soft px-3 py-2 text-sm font-semibold text-ok-text">{notice}</p>}
+      <InstallApp label="Instala el panel en tu móvil" hint="Para pasar lista en clase: abre la app, toca a quien vino." />
       {closure && (
         <p className="rounded-2xl border-2 border-ink bg-white p-4 text-sm">
           <b>Escuela cerrada{closure.reason ? `: ${closure.reason}` : ""}</b>
@@ -257,6 +262,10 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
                     <b>{enrolled.length}</b>
                     <span className="text-muted">/{cap} apuntados</span>
                     {extra > 0 && <span className="text-muted"> · {extra} sin abono</span>}
+                    {(() => {
+                      const yes = rows.filter((r) => r.user_id && rsvp[`${s.id}|${r.user_id}`] === true).length;
+                      return yes > 0 ? <span className="font-semibold text-few-text"> · {yes} vienen</span> : null;
+                    })()}
                     {s.uses_roles && (
                       <span className="block text-xs text-muted">
                         {leaders} leaders · {followers} followers
@@ -289,6 +298,7 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
                 {isOpen && (
                   <Roster
                     rows={rows}
+                    rsvpOf={(r) => (r.user_id ? rsvp[`${s.id}|${r.user_id}`] : undefined)}
                     canMark={!isFuture}
                     usesRoles={s.uses_roles}
                     onMark={mark}
@@ -388,7 +398,9 @@ function Roster({
   onMark,
   onMarkAll,
   onAddGuest,
+  rsvpOf,
 }: {
+  rsvpOf: (r: RosterRow) => boolean | undefined;
   rows: RosterRow[];
   canMark: boolean;
   usesRoles: boolean;
@@ -401,18 +413,42 @@ function Roster({
 
   return (
     <div className="border-t border-line p-4">
+      {rows.length > 0 && (
+        <p className="mb-2 flex flex-wrap gap-3 text-xs text-muted">
+          <span>▍Apuntado</span>
+          <span className="text-few-text">▍Dijo que viene</span>
+          <span className="text-ok-text">▍Vino</span>
+          {canMark && <span>· Toca el nombre para marcar que vino</span>}
+        </p>
+      )}
       {rows.length === 0 ? (
         <p className="text-sm text-muted">Nadie apuntado todavía.</p>
       ) : (
         <ul className="flex flex-col">
           {rows.map((r) => (
-            <li key={`${r.user_id ?? r.membership_id ?? r.attendance_id}`} className="flex flex-wrap items-center gap-3 border-b border-line py-2.5 last:border-b-0">
-              <span className="min-w-0 flex-1">
+            <li
+              key={`${r.user_id ?? r.membership_id ?? r.attendance_id}`}
+              className={`-mx-2 flex flex-wrap items-center gap-3 rounded-xl border-l-4 px-2 py-2.5 ${
+                r.present === true
+                  ? "border-ok bg-ok-soft"
+                  : rsvpOf(r) === true
+                    ? "border-few bg-few/10"
+                    : rsvpOf(r) === false
+                      ? "border-line opacity-60"
+                      : "border-line"
+              }`}
+            >
+              <span
+                className={`min-w-0 flex-1 ${canMark ? "cursor-pointer" : ""}`}
+                onClick={canMark ? () => onMark(r, r.present === true ? null : true) : undefined}
+              >
                 <span className="font-semibold">{r.name}</span>
                 <span className="ml-2 inline-flex flex-wrap gap-1 align-middle">
                   {r.kind === "prueba" && <Badge tone="blue">Clase de prueba</Badge>}
                   {r.kind === "visitante" && <Badge tone="orange">Sin abono</Badge>}
                   {ROLE[r.role] && <Badge tone="gray">{ROLE[r.role]}</Badge>}
+                  {rsvpOf(r) === true && r.present !== true && <Badge tone="orange">Dijo que viene</Badge>}
+                  {rsvpOf(r) === false && <Badge tone="gray">No viene</Badge>}
                 </span>
                 {(r.phone || r.email) && <span className="block text-xs text-muted">{[r.phone, r.email].filter(Boolean).join(" · ")}</span>}
               </span>

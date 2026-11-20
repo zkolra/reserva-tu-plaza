@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import LoginForm from "@/app/admin/LoginForm";
 import PasswordBox from "@/components/PasswordBox";
+import InstallApp from "@/components/InstallApp";
 import { formatPrice } from "@/lib/pricing";
 import { formatDayLong, formatInTz, localDate } from "@/lib/private";
 import type { SupabaseConfig } from "@/lib/useAccount";
@@ -65,6 +66,7 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
   const [privates, setPrivates] = useState<PrivateB[]>([]);
   const [attendance, setAttendance] = useState<Att[]>([]);
   const [payments, setPayments] = useState<{ id: string; membership_id: string; period_start: string; period_end: string | null; amount_cents: number; status: string }[]>([]);
+  const [rsvp, setRsvp] = useState<Record<string, boolean>>({});
   const [cancels, setCancels] = useState<{ series_id: string | null; date_from: string; date_to: string; reason: string | null }[]>([]);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -104,6 +106,8 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
       .eq("studio_id", studio.id)
       .gte("date_to", localDate(tz, 0));
     setCancels(cx.data ?? []);
+    const rv = await sb.from("class_rsvp").select("series_id, class_date, going").eq("user_id", userId).gte("class_date", localDate(tz, 0));
+    if (!rv.error) setRsvp(Object.fromEntries((rv.data ?? []).map((x) => [`${x.series_id}|${x.class_date}`, x.going as boolean])));
     // Solo la asistencia propia (el personal de la escuela podría ver la de todos)
     const myIds = ((m.data ?? []) as { id: string }[]).map((x) => x.id);
     const a = await sb
@@ -177,7 +181,7 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
   const past = (memberships ?? []).filter((m) => m !== active);
   // Próximos 7 días: las clases del abono (y la clase de prueba)
   const nowHm = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
-  const week: { date: string; time: string; name: string; extra: string; trial?: boolean; cancelled?: string }[] = [];
+  const week: { date: string; time: string; name: string; extra: string; trial?: boolean; cancelled?: string; seriesId?: string }[] = [];
   const cancelReason = (seriesId: string | undefined, date: string) => {
     const c = cancels.find((x) => date >= x.date_from && date <= x.date_to && (x.series_id === null || x.series_id === seriesId));
     return c ? c.reason || "Sin clase" : undefined;
@@ -195,6 +199,7 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
       week.push({
         date,
         cancelled: cancelReason(ms.series_id, date),
+        seriesId: ms.series_id,
         time: hhmm(c.start_time),
         name: c.name,
         extra: [c.level, c.rooms?.name, ROLE[ms.role]].filter(Boolean).join(" · "),
@@ -396,6 +401,8 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
         )}
       </section>
 
+      <InstallApp hint="Tus clases, «Voy / No voy» y avisos de la escuela, en tu móvil." />
+
       {/* ── Renovar / pagos pendientes ── */}
       {active && (myPending.length > 0 || canRenew) && (
         <section className="flex flex-col gap-3 rounded-3xl border-2 border-ink bg-white p-5">
@@ -456,6 +463,35 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
                       <span className="block font-semibold text-accent-text">Cancelada · {w.cancelled}</span>
                     )}
                   </span>
+                  {w.seriesId && !w.cancelled && (
+                    <span className="ml-auto flex shrink-0 gap-1" role="group" aria-label={`¿Vas a ${w.name}?`}>
+                      {([true, false] as const).map((going) => {
+                        const key = `${w.seriesId}|${w.date}`;
+                        const on = rsvp[key] === going;
+                        return (
+                          <button
+                            key={String(going)}
+                            type="button"
+                            aria-pressed={on}
+                            onClick={async () => {
+                              if (!sb) return;
+                              setRsvp({ ...rsvp, [key]: going });
+                              const { error } = await sb.rpc("set_my_rsvp", { p_series: w.seriesId, p_date: w.date, p_going: going });
+                              if (error) {
+                                setError(error.message);
+                                load();
+                              }
+                            }}
+                            className={`h-9 rounded-lg px-2.5 text-xs font-bold ${
+                              on ? (going ? "bg-few text-white" : "bg-ink text-white") : "border border-line bg-white text-muted"
+                            }`}
+                          >
+                            {going ? "Voy" : "No voy"}
+                          </button>
+                        );
+                      })}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
