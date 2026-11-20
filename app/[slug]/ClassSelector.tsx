@@ -741,7 +741,7 @@ export default function ClassSelector({
               </div>
             )}
 
-            {n > 0 && mode === "choice" && (
+            {n > 0 && mode === "choice" && !account.mine?.paidAtSchool && (
               <fieldset className="flex flex-col gap-2">
                 <legend className="mb-1 text-sm font-bold">
                   ¿Cómo quieres pagar?
@@ -797,7 +797,29 @@ export default function ClassSelector({
               </p>
             )}
 
-            {account.mine && !changed && step !== "done" && (
+            {account.mine?.paidAtSchool ? (
+              <div className="flex flex-col gap-2 rounded-xl bg-paper px-3 py-3 text-sm leading-relaxed">
+                <p>
+                  <b>
+                    Tu abono está pagado en la escuela
+                    {account.mine.endsOn
+                      ? ` hasta el ${new Date(account.mine.endsOn + "T12:00:00").toLocaleDateString("es-ES", { day: "numeric", month: "long" })}`
+                      : ""}
+                    .
+                  </b>{" "}
+                  Para cambiar de clases antes, habla con la escuela.
+                </p>
+                <p>
+                  Cómo quieres pagar después (con tarjeta cada mes o en la escuela) lo eliges en{" "}
+                  <a href={`/${studio.slug}/cuenta`} className="font-bold underline">
+                    Mi cuenta
+                  </a>
+                  .
+                </p>
+              </div>
+            ) : null}
+
+            {account.mine && !account.mine.paidAtSchool && !changed && step !== "done" && (
               <p className="rounded-xl bg-paper px-3 py-2.5 text-sm">
                 {account.mine.autoRenew
                   ? "Tu abono se renueva automáticamente cada mes."
@@ -842,7 +864,7 @@ export default function ClassSelector({
                 Te hemos enviado un enlace a <b>{emailInput}</b>. Ábrelo en este
                 mismo dispositivo para confirmar tu abono.
               </div>
-            ) : (
+            ) : account.mine?.paidAtSchool ? null : (
               <button
                 type="button"
                 onClick={onContinue}

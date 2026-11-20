@@ -6,7 +6,15 @@ import type { DanceRole } from "./types";
 
 export type SupabaseConfig = { url: string; key: string } | null;
 
-export type MyMembership = { id: string; series: string[]; role: DanceRole; autoRenew: boolean; endsOn: string | null };
+export type MyMembership = {
+  id: string;
+  series: string[];
+  role: DanceRole;
+  autoRenew: boolean;
+  endsOn: string | null;
+  /** Pagado en la escuela (efectivo, transferencia…): no se cambia online */
+  paidAtSchool: boolean;
+};
 
 let browserClient: SupabaseClient | null = null;
 export function getBrowserClient(cfg: NonNullable<SupabaseConfig>) {
@@ -32,10 +40,12 @@ export function useAccount(cfg: SupabaseConfig, studioId: string) {
     sb.rpc("trial_available", { p_studio: studioId }).then(({ data, error }) => {
       setTrialAvailable(error ? null : Boolean(data));
     });
+    const { data: who } = await sb.auth.getUser();
     const { data } = await sb
       .from("memberships")
-      .select("id, auto_renew, ends_on, membership_series(series_id, role)")
+      .select("id, auto_renew, ends_on, payment_method, membership_series(series_id, role)")
       .eq("studio_id", studioId)
+      .eq("user_id", who.user?.id ?? "")
       .eq("status", "active")
       .maybeSingle();
     if (!data) {
@@ -50,6 +60,7 @@ export function useAccount(cfg: SupabaseConfig, studioId: string) {
       role: withRole?.role ?? "follower",
       autoRenew: data.auto_renew,
       endsOn: data.ends_on,
+      paidAtSchool: !!data.payment_method && data.payment_method !== "online",
     });
   }, [sb, studioId]);
 

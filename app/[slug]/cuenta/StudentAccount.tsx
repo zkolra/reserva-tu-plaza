@@ -272,8 +272,42 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
             <div className={`rounded-xl px-3 py-3 text-sm ${active.auto_renew && !paidAtSchool ? "bg-ok-soft text-ok-text" : "bg-paper"}`}>
               {paidAtSchool ? (
                 <>
-                  <b>Pagado en la escuela ({PAID_AT_SCHOOL[active.payment_method ?? ""]}) hasta el {active.ends_on ? day(active.ends_on) : "final del mes"}.</b>{" "}
-                  Para renovarlo, habla con la escuela.
+                  <b>Pagado en la escuela ({PAID_AT_SCHOOL[active.payment_method ?? ""]}) hasta el {active.ends_on ? day(active.ends_on) : "final del mes"}.</b>
+                  {studio.renewal_mode !== "manual" && (
+                    <fieldset className="mt-3 flex flex-col gap-2">
+                      <legend className="mb-1 font-semibold">
+                        ¿Y después{active.ends_on ? ` del ${day(active.ends_on)}` : ""}?
+                      </legend>
+                      {(
+                        [
+                          [false, "Pagaré en la escuela", "Como ahora: pagas allí y la escuela renueva tu abono."],
+                          [true, "Renovar con tarjeta cada mes", "Se renueva solo con las mismas clases. Lo puedes cancelar cuando quieras."],
+                        ] as const
+                      ).map(([card, label, hint]) => (
+                        <label key={label} className={`flex cursor-pointer gap-2 rounded-xl border bg-white p-3 ${active.auto_renew === card ? "border-2 border-ink" : "border-line"}`}>
+                          <input
+                            type="radio"
+                            name="next-payment"
+                            checked={active.auto_renew === card}
+                            onChange={() =>
+                              call(
+                                "set_my_next_payment",
+                                { p_studio: studio.id, p_card: card },
+                                card
+                                  ? "Listo: al terminar, tu abono se renovará con tarjeta. Te avisaremos antes."
+                                  : "Listo: al terminar, pagarás en la escuela.",
+                              )
+                            }
+                            className="mt-1 h-4 w-4"
+                          />
+                          <span>
+                            <b className="block">{label}</b>
+                            <span className="text-xs text-muted">{hint}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </fieldset>
+                  )}
                 </>
               ) : active.auto_renew ? (
                 <b>Se renueva automáticamente cada mes.</b>
