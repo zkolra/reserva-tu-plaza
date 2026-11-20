@@ -477,6 +477,25 @@ function AddStudent({
   const [payment, setPayment] = useState("cash");
   const [enrollment, setEnrollment] = useState(studio.enrollment_fee_cents > 0);
   const [welcome, setWelcome] = useState(true);
+  const [startNext, setStartNext] = useState(false);
+  type Q = { first_cents: number; monthly_cents: number; sessions_left: number | null; sessions_total: number | null; period_end: string; next_start: string; start_on: string };
+  const [quote, setQuote] = useState<Q | null>(null);
+  const pickedKey = picked.join(",");
+  useEffect(() => {
+    if (!pickedKey) {
+      setQuote(null);
+      return;
+    }
+    let live = true;
+    sb.rpc("quote_membership", { p_studio: studio.id, p_series: pickedKey.split(","), p_start: null }).then(({ data, error }) => {
+      if (live) setQuote(error ? null : ((Array.isArray(data) ? data[0] : data) as Q));
+    });
+    return () => {
+      live = false;
+    };
+  }, [sb, studio.id, pickedKey]);
+  const calendar = !!quote && quote.sessions_total !== null;
+  const dm = (iso: string) => new Date(iso + "T12:00:00").toLocaleDateString("es-ES", { day: "numeric", month: "long" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -523,6 +542,7 @@ function AddStudent({
       p_months: months,
       p_payment: payment,
       p_enrollment: enrollment,
+      ...(calendar && startNext && quote ? { p_start: quote.next_start } : {}),
     });
     if (error) {
       setBusy(false);
@@ -640,6 +660,28 @@ function AddStudent({
         )}
       </div>
 
+      {calendar && quote && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <b>Empieza:</b>
+          {[false, true].map((next) => (
+            <button
+              key={String(next)}
+              type="button"
+              onClick={() => setStartNext(next)}
+              className={`h-10 rounded-xl px-3 font-semibold ${startNext === next ? "bg-ink text-white" : "border border-line"}`}
+            >
+              {next ? `el ${dm(quote.next_start)}` : "hoy"}
+            </button>
+          ))}
+          {!startNext && quote.first_cents !== quote.monthly_cents && (
+            <span className="w-full rounded-xl bg-paper px-3 py-2">
+              Este mes paga <b>{formatPrice(quote.first_cents, studio.currency)}</b>: quedan {quote.sessions_left} de {quote.sessions_total} clases
+              hasta el {dm(quote.period_end)}.
+              {months > 1 ? ` Total por ${months} meses: ${formatPrice(quote.first_cents + quote.monthly_cents * (months - 1), studio.currency)}.` : ""}
+            </span>
+          )}
+        </div>
+      )}
       {n > 0 && plan && (
         <p className="text-sm">
           {isFullPass(tier) ? `${plan.name} (todas las clases)` : `Abono de ${n} ${n === 1 ? "clase" : "clases"} por semana`}: <b>{formatPrice(plan.price_cents, studio.currency)}</b> al mes
@@ -1543,6 +1585,139 @@ function FullPassBox({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
   );
 }
 
+/** Mes natural o 30 días, y qué paga quien empieza a mitad de mes. */
+function AbonoPeriodBox({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
+  type Cfg = { abono_period: "calendar" | "rolling"; prorate_mode: "proportional" | "per_class"; single_class_cents: number; next_month_from_day: number | null };
+  const [cfg, setCfg] = useState<Cfg | null>(null);
+  const [single, setSingle] = useState("");
+  const [fromDay, setFromDay] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    sb.from("studios")
+      .select("abono_period, prorate_mode, single_class_cents, next_month_from_day")
+      .eq("id", studio.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) {
+          setError("Falta ejecutar la migración 0021 en Supabase.");
+          return;
+        }
+        const c = data as Cfg;
+        setCfg(c);
+        setSingle(c.single_class_cents ? String(c.single_class_cents / 100) : "");
+        setFromDay(c.next_month_from_day ? String(c.next_month_from_day) : "");
+      });
+  }, [sb, studio.id]);
+
+  async function save(patch: Partial<Cfg>) {
+    setError(null);
+    const { error } = await sb.from("studios").update(patch).eq("id", studio.id);
+    if (error) setError(error.message);
+    else {
+      setCfg((c) => (c ? { ...c, ...patch } : c));
+      setMsg("Guardado ✓");
+      setTimeout(() => setMsg(null), 1500);
+    }
+  }
+
+  const choice = (on: boolean, label: string, hint: string, onClick: () => void) => (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={on}
+      onClick={onClick}
+      className={`flex flex-col items-start rounded-xl p-3 text-left text-sm ${on ? "border-2 border-ink bg-white" : "border border-line"}`}
+    >
+      <b>{label}</b>
+      <span className="text-xs text-muted">{hint}</span>
+    </button>
+  );
+
+  return (
+    <div className="flex flex-col gap-4 rounded-2xl bg-white p-5">
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 className="text-base font-bold">Periodo del abono</h2>
+        {msg && <span className="text-sm font-semibold text-ok-text">{msg}</span>}
+      </div>
+      {cfg && (
+        <>
+          <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Periodo del abono">
+            {choice(cfg.abono_period === "calendar", "Mes natural (del 1 al último día)", "Todos pagan a primeros de mes. Lo más habitual.", () =>
+              save({ abono_period: "calendar" }),
+            )}
+            {choice(cfg.abono_period === "rolling", "Un mes desde que paga", "Cada alumno tiene su propia fecha (p. ej. del 20 al 20).", () =>
+              save({ abono_period: "rolling" }),
+            )}
+          </div>
+
+          {cfg.abono_period === "calendar" && (
+            <>
+              <div className="flex flex-col gap-2">
+                <b className="text-sm">Si alguien empieza a mitad de mes, paga…</b>
+                <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Precio a mitad de mes">
+                  {choice(
+                    cfg.prorate_mode === "proportional",
+                    "La parte proporcional",
+                    "Precio del abono × clases que quedan ÷ clases del mes. Festivos y clases canceladas no cuentan.",
+                    () => save({ prorate_mode: "proportional" }),
+                  )}
+                  {choice(
+                    cfg.prorate_mode === "per_class",
+                    "Cada clase que queda, a precio de clase suelta",
+                    "Como mucho, el precio del mes entero.",
+                    () => save({ prorate_mode: "per_class" }),
+                  )}
+                </div>
+                {cfg.prorate_mode === "per_class" && (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      save({ single_class_cents: Math.round(Number(single.replace(",", ".") || 0) * 100) });
+                    }}
+                    className="flex flex-wrap items-end gap-3"
+                  >
+                    <Field label={`Precio de una clase (${studio.currency})`}>
+                      <input required inputMode="decimal" value={single} onChange={(e) => setSingle(e.target.value)} className={`${inputCls} w-32`} />
+                    </Field>
+                    <button type="submit" className="h-11 rounded-xl bg-ink px-4 text-sm font-bold text-white">
+                      Guardar
+                    </button>
+                  </form>
+                )}
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  save({ next_month_from_day: fromDay === "" ? null : Math.min(31, Math.max(1, Number(fromDay))) });
+                }}
+                className="flex flex-col gap-2"
+              >
+                <b className="text-sm">Ofrecer «empezar el mes que viene»</b>
+                <p className="text-xs text-muted">
+                  Desde ese día del mes, el alumno elige: empezar ya (pagando solo lo que queda) o empezar el día 1 del mes siguiente.
+                  Vacío = no se ofrece.
+                </p>
+                <div className="flex flex-wrap items-end gap-3">
+                  <Field label="A partir del día">
+                    <input type="number" min={1} max={31} value={fromDay} placeholder="p. ej. 20" onChange={(e) => setFromDay(e.target.value)} className={`${inputCls} w-32`} />
+                  </Field>
+                  <button type="submit" className="h-11 rounded-xl bg-ink px-4 text-sm font-bold text-white">
+                    Guardar
+                  </button>
+                </div>
+              </form>
+            </>
+          )}
+        </>
+      )}
+      {error && <ErrorBox text={error} />}
+    </div>
+  );
+}
+
 /** Festivos y cierres: días en que no hay ninguna clase. */
 function HolidaysBox({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
   type Closure = { id: string; date_from: string; date_to: string; reason: string | null };
@@ -1876,6 +2051,8 @@ function Settings({
           </button>
         </div>
       </form>
+
+      <AbonoPeriodBox sb={sb} studio={studio} />
 
       <HolidaysBox sb={sb} studio={studio} />
 

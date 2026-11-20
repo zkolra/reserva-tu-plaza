@@ -6,6 +6,20 @@ import type { DanceRole } from "./types";
 
 export type SupabaseConfig = { url: string; key: string } | null;
 
+export type Quote = {
+  plan_id: string;
+  plan_name: string;
+  monthly_cents: number;
+  start_on: string;
+  period_end: string;
+  sessions_total: number | null;
+  sessions_left: number | null;
+  first_cents: number;
+  offer_next: boolean;
+  next_start: string;
+  next_cents: number;
+};
+
 export type MyMembership = {
   id: string;
   series: string[];
@@ -99,13 +113,14 @@ export function useAccount(cfg: SupabaseConfig, studioId: string) {
     return error ? error.message : null;
   }
 
-  async function save(seriesIds: string[], role: DanceRole, autoRenew: boolean) {
+  async function save(seriesIds: string[], role: DanceRole, autoRenew: boolean, start: string | null = null) {
     if (!sb) return "La base de datos no está conectada.";
     const { error } = await sb.rpc("create_membership", {
       p_studio: studioId,
       p_series: seriesIds,
       p_role: role === "none" ? "follower" : role,
       p_auto_renew: autoRenew,
+      ...(start ? { p_start: start } : {}),
     });
     if (error) return error.message;
     await loadMine();
@@ -129,5 +144,16 @@ export function useAccount(cfg: SupabaseConfig, studioId: string) {
     await sb?.auth.signOut();
   }
 
-  return { enabled: !!sb, ready, email, mine, enrollmentDue, trialAvailable, sendLink, save, bookTrial, signOut };
+  /** Precio del primer mes (si se empieza a mitad de mes) — null si la base aún no lo sabe calcular. */
+  const quote = useCallback(
+    async (seriesIds: string[], start: string | null) => {
+      if (!sb || seriesIds.length === 0) return null;
+      const { data, error } = await sb.rpc("quote_membership", { p_studio: studioId, p_series: seriesIds, p_start: start });
+      if (error || !data) return null;
+      return (Array.isArray(data) ? data[0] : data) as Quote;
+    },
+    [sb, studioId],
+  );
+
+  return { enabled: !!sb, ready, email, mine, enrollmentDue, trialAvailable, sendLink, save, bookTrial, signOut, quote };
 }

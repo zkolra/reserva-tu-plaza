@@ -26,6 +26,8 @@ type Membership = {
   ends_on: string | null;
   auto_renew: boolean;
   payment_method?: string | null;
+  period_cents?: number | null;
+  period_sessions?: number | null;
   enrollment_fee_cents: number;
   plans: { name: string; price_cents: number } | null;
   membership_series: {
@@ -114,7 +116,14 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
     setAttendance((a.data ?? []) as unknown as Att[]);
     const firstError = [m, t, p].find((r) => r.error)?.error;
     if (firstError) setError(firstError.message);
-    setMemberships((m.data ?? []) as unknown as Membership[]);
+    const list = (m.data ?? []) as unknown as Membership[];
+    // Precio del primer mes (migración 0021); si aún no existe, se ignora
+    if (list.length) {
+      const extra = await sb.from("memberships").select("id, period_cents, period_sessions").in("id", list.map((x) => x.id));
+      if (!extra.error)
+        for (const e of extra.data ?? []) Object.assign(list.find((x) => x.id === e.id) ?? {}, e);
+    }
+    setMemberships(list);
     setTrial((t.data as unknown as Trial) ?? null);
     setPrivates((p.data ?? []) as PrivateB[]);
     setName(prof.data?.full_name ?? "");
@@ -171,6 +180,7 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
       const c = ms.class_series;
       if (!c || c.weekday !== isoDow) continue;
       if (active?.ends_on && date > active.ends_on) continue;
+      if (active && date < active.starts_on) continue;
       if (i === 0 && hhmm(c.start_time) <= nowHm) continue;
       week.push({
         date,
@@ -316,7 +326,16 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
                   <b>Válido hasta el {active.ends_on ? day(active.ends_on) : "final del mes"}.</b> No se renueva solo.
                 </>
               )}
-              <div className="mt-1 text-xs opacity-80">Desde el {day(active.starts_on)}</div>
+              <div className="mt-1 text-xs opacity-80">
+                {active.starts_on > localDate(tz, 0) ? (
+                  <b>Empieza el {day(active.starts_on)}</b>
+                ) : (
+                  <>Desde el {day(active.starts_on)}</>
+                )}
+                {active.period_cents != null && active.period_sessions != null && active.period_cents !== active.plans?.price_cents && (
+                  <> · Primer mes: {formatPrice(active.period_cents, studio.currency)} ({active.period_sessions} {active.period_sessions === 1 ? "clase" : "clases"})</>
+                )}
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-2">

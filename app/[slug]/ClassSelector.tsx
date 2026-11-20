@@ -11,7 +11,7 @@ import {
   tierFor,
 } from "@/lib/pricing";
 import type { ClassSeries, DanceRole, StudioData } from "@/lib/types";
-import { useAccount, type SupabaseConfig } from "@/lib/useAccount";
+import { useAccount, type Quote, type SupabaseConfig } from "@/lib/useAccount";
 
 const DAY_NAMES = [
   "Lunes",
@@ -68,6 +68,30 @@ export default function ClassSelector({
   const [trialDate, setTrialDate] = useState<string | null>(null);
   const router = useRouter();
   const account = useAccount(data.isDemo ? null : supabaseConfig, studio.id);
+  // Mes natural: cuánto se paga este mes si se empieza hoy, y la opción de empezar el día 1
+  const [startNext, setStartNext] = useState(false);
+  const [quote, setQuote] = useState<Quote | null>(null);
+  const quoteFn = account.quote;
+  const selectedKey = selected.join(",");
+  useEffect(() => {
+    if (purpose !== "abono" || !selectedKey) {
+      setQuote(null);
+      return;
+    }
+    let live = true;
+    const t = setTimeout(() => {
+      quoteFn(selectedKey.split(","), null).then((q) => live && setQuote(q));
+    }, 250);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [quoteFn, selectedKey, purpose]);
+  const startsNext = !!quote?.offer_next && startNext;
+  const partial = !!quote && quote.sessions_total !== null && quote.first_cents !== quote.monthly_cents;
+  const payNow = quote ? (startsNext ? quote.next_cents : quote.first_cents) : null;
+  const dayMonth = (iso: string) =>
+    new Date(iso + "T12:00:00").toLocaleDateString("es-ES", { day: "numeric", month: "long" });
   const mineIds = account.mine?.series ?? [];
   const storeKey = `rtp:${studio.slug}:pending`;
 
@@ -163,7 +187,7 @@ export default function ClassSelector({
       router.refresh();
       return;
     }
-    const err = await account.save(selected, role, effectiveAuto);
+    const err = await account.save(selected, role, effectiveAuto, startsNext && quote ? quote.next_start : null);
     setBusy(false);
     if (err) {
       setError(err);
@@ -696,6 +720,48 @@ export default function ClassSelector({
             </div>
             <div className="-mt-3 text-right text-xs text-muted">al mes</div>
 
+            {n > 0 && quote && !account.mine && (partial || quote.offer_next) && (
+              <div className="flex flex-col gap-2 border-t border-line pt-3 text-sm">
+                {quote.offer_next ? (
+                  <fieldset className="flex flex-col gap-2">
+                    <legend className="mb-1 font-bold">¿Cuándo empiezas?</legend>
+                    {(
+                      [
+                        [
+                          false,
+                          "Empezar ya",
+                          `${quote.sessions_left} ${quote.sessions_left === 1 ? "clase" : "clases"} hasta el ${dayMonth(quote.period_end)} · ${formatPrice(quote.first_cents, studio.currency)}`,
+                        ],
+                        [true, `Empezar el ${dayMonth(quote.next_start)}`, `Mes completo · ${formatPrice(quote.next_cents, studio.currency)}`],
+                      ] as const
+                    ).map(([next, label, hint]) => (
+                      <label
+                        key={label}
+                        className={`flex cursor-pointer gap-2 rounded-xl border p-3 ${startNext === next ? "border-2 border-ink" : "border-line"}`}
+                      >
+                        <input type="radio" name="start" checked={startNext === next} onChange={() => setStartNext(next)} className="mt-1 h-4 w-4" />
+                        <span>
+                          <b className="block">{label}</b>
+                          <span className="text-xs text-muted">{hint}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </fieldset>
+                ) : (
+                  <div className="rounded-xl bg-paper px-3 py-2.5">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <b>Este mes empiezas a mitad</b>
+                      <b className="text-base">{formatPrice(quote.first_cents, studio.currency)}</b>
+                    </div>
+                    <p className="text-xs text-muted">
+                      Quedan {quote.sessions_left} de {quote.sessions_total} clases hasta el {dayMonth(quote.period_end)}. Desde el{" "}
+                      {dayMonth(quote.next_start)}: {formatPrice(quote.next_cents, studio.currency)} al mes.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {n > 0 && studio.enrollment_fee_cents > 0 && (
               <div className="flex flex-col gap-2 border-t border-line pt-3">
                 <div className="flex items-baseline justify-between text-sm">
@@ -714,7 +780,7 @@ export default function ClassSelector({
                       <span className="text-sm font-bold">Hoy pagas</span>
                       <span className="text-xl font-bold">
                         {formatPrice(
-                          (tier?.plan.price_cents ?? 0) +
+                          (payNow ?? tier?.plan.price_cents ?? 0) +
                             studio.enrollment_fee_cents,
                           studio.currency,
                         )}
