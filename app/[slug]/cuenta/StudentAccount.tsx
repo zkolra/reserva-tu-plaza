@@ -64,6 +64,7 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
   const [trial, setTrial] = useState<Trial | null>(null);
   const [privates, setPrivates] = useState<PrivateB[]>([]);
   const [attendance, setAttendance] = useState<Att[]>([]);
+  const [payments, setPayments] = useState<{ id: string; membership_id: string; period_start: string; period_end: string | null; amount_cents: number; status: string }[]>([]);
   const [cancels, setCancels] = useState<{ series_id: string | null; date_from: string; date_to: string; reason: string | null }[]>([]);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -124,6 +125,15 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
         for (const e of extra.data ?? []) Object.assign(list.find((x) => x.id === e.id) ?? {}, e);
     }
     setMemberships(list);
+    // Pagos (migración 0022); si aún no existe, se ignora
+    if (list.length) {
+      const pays = await sb
+        .from("membership_payments")
+        .select("id, membership_id, period_start, period_end, amount_cents, status")
+        .in("membership_id", list.map((x) => x.id))
+        .order("period_start");
+      setPayments(pays.error ? [] : (pays.data ?? []));
+    }
     setTrial((t.data as unknown as Trial) ?? null);
     setPrivates((p.data ?? []) as PrivateB[]);
     setName(prof.data?.full_name ?? "");
@@ -202,6 +212,19 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
   const monthPrefix = todayLocal.slice(0, 7);
   const presentMonth = attendance.filter((x) => x.present && x.class_date.startsWith(monthPrefix)).length;
   const presentTotal = attendance.filter((x) => x.present).length;
+
+  // Renovación manual: desde 15 días antes del final
+  const today0 = localDate(tz, 0);
+  const daysLeft = active?.ends_on
+    ? Math.round((Date.parse(active.ends_on + "T12:00:00Z") - Date.parse(today0 + "T12:00:00Z")) / 864e5)
+    : null;
+  const myPending = payments.filter((x) => x.membership_id === active?.id && x.status === "pending");
+  const nextStart = active?.ends_on
+    ? new Date(Date.parse(active.ends_on + "T12:00:00Z") + 864e5).toISOString().slice(0, 10)
+    : null;
+  const canRenew =
+    !!active && !!active.ends_on && daysLeft !== null && daysLeft >= 0 && daysLeft <= 15 && (!active.auto_renew || !!PAID_AT_SCHOOL[active.payment_method ?? ""]);
+  const monthName = (iso: string) => new Date(iso + "T12:00:00").toLocaleDateString("es-ES", { month: "long" });
 
   const paidAtSchool = !!active && !!PAID_AT_SCHOOL[active.payment_method ?? ""];
   const nowIso = new Date().toISOString();
@@ -372,6 +395,47 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
           </div>
         )}
       </section>
+
+      {/* ── Renovar / pagos pendientes ── */}
+      {active && (myPending.length > 0 || canRenew) && (
+        <section className="flex flex-col gap-3 rounded-3xl border-2 border-ink bg-white p-5">
+          {myPending.map((x) => (
+            <p key={x.id} className="text-sm">
+              <b>Pendiente de pago:</b> {x.period_end ? `${day(x.period_start)} – ${day(x.period_end)}` : day(x.period_start)} ·{" "}
+              <b>{formatPrice(x.amount_cents, studio.currency)}</b>
+              <span className="text-muted"> · Paga en la escuela. El pago online llegará pronto.</span>
+            </p>
+          ))}
+          {canRenew && nextStart && (
+            <>
+              <p className="text-sm">
+                Tu abono termina el <b>{day(active.ends_on!)}</b>
+                {daysLeft === 0 ? " (hoy)" : daysLeft === 1 ? " (mañana)" : ` (en ${daysLeft} días)`}. ¿Seguimos en {monthName(nextStart)}?
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    call(
+                      "renew_my_membership",
+                      { p_studio: studio.id },
+                      `Renovado ✓ Paga ${active.plans ? formatPrice(active.plans.price_cents, studio.currency) : ""} en la escuela.`,
+                      `¿Renovar tu abono para ${monthName(nextStart)} con las mismas clases${active.plans ? ` (${formatPrice(active.plans.price_cents, studio.currency)})` : ""}? Lo pagas en la escuela.`,
+                    )
+                  }
+                  className="h-11 rounded-xl bg-accent px-4 text-sm font-bold text-on-accent"
+                >
+                  Renovar {monthName(nextStart)}
+                  {active.plans ? ` · ${formatPrice(active.plans.price_cents, studio.currency)}` : ""}
+                </button>
+                <a href={`/${studio.slug}`} className="flex h-11 items-center rounded-xl border border-line px-4 text-sm font-bold">
+                  Cambiar de clases
+                </a>
+              </div>
+            </>
+          )}
+        </section>
+      )}
 
       {/* ── Esta semana ── */}
       {active && (

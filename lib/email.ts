@@ -81,6 +81,20 @@ ${button(studio, d.scheduleUrl, "Ver mis clases")}`;
   return { subject: `Clase cancelada: ${d.className}, ${d.dateLabel}`, html: layout(studio, body) };
 }
 
+/** Recordatorio: el abono termina pronto. */
+export function renewalReminderEmail(
+  studio: EmailStudio,
+  d: { name: string | null; endsLabel: string; nextMonth: string; price: string | null; classes: string | null; accountUrl: string },
+) {
+  const hello = d.name ? `Hola, ${esc(d.name.split(" ")[0])}:` : "¡Hola!";
+  const body = `<p style="margin:0 0 12px">${hello}</p>
+<p style="margin:0 0 12px">Tu abono en <b>${esc(studio.name)}</b> termina el <b>${esc(d.endsLabel)}</b>. ¿Seguimos en ${esc(d.nextMonth)}?</p>
+${d.classes ? `<p style="margin:0 0 12px">Tus clases: ${esc(d.classes)}.</p>` : ""}
+<p style="margin:0">Entra en «Mi cuenta» y pulsa «Renovar»${d.price ? ` (${esc(d.price)})` : ""}. Si quieres cambiar de clases, también puedes hacerlo allí.</p>
+${button(studio, d.accountUrl, "Renovar mi abono")}`;
+  return { subject: `Tu abono termina el ${d.endsLabel}`, html: layout(studio, body) };
+}
+
 /** Varios correos de una vez (hasta 100 por llamada). */
 export async function sendEmailBatch(
   emails: { to: string; subject: string; html: string }[],

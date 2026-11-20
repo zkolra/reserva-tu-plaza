@@ -326,6 +326,7 @@ function Students({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
           onCancel={() => setAdding(false)}
         />
       )}
+      <PendingPayments sb={sb} studio={studio} rows={rows} emails={emails} reload={reload} onChange={() => setReload((n) => n + 1)} />
       <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
         <Kpi label="Abonos activos" value={rows ? String(rows.length) : "…"} />
         <Kpi
@@ -450,6 +451,91 @@ function Students({ sb, studio }: { sb: SupabaseClient; studio: Studio }) {
         </div>
       )}
     </section>
+  );
+}
+
+/** Renovaciones y abonos de la web que aún no se han pagado. La escuela los marca al cobrar. */
+function PendingPayments({
+  sb,
+  studio,
+  rows,
+  emails,
+  reload,
+  onChange,
+}: {
+  sb: SupabaseClient;
+  studio: Studio;
+  rows: MembershipRow[] | null;
+  emails: Record<string, string>;
+  reload: number;
+  onChange: () => void;
+}) {
+  type P = { id: string; membership_id: string; period_start: string; period_end: string | null; amount_cents: number };
+  const [list, setList] = useState<P[]>([]);
+  const [method, setMethod] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    sb.from("membership_payments")
+      .select("id, membership_id, period_start, period_end, amount_cents")
+      .eq("studio_id", studio.id)
+      .eq("status", "pending")
+      .order("period_start")
+      .then(({ data, error }) => setList(error ? [] : ((data ?? []) as P[])));
+  }, [sb, studio.id, reload]);
+
+  if (list.length === 0) return null;
+  const who = (membershipId: string) => {
+    const r = rows?.find((x) => x.id === membershipId);
+    if (!r) return "Alumno";
+    return (r.user_id && emails[r.user_id]) || r.guest_name || r.guest_email || "Alumno";
+  };
+  const fmt = (iso: string) =>
+    new Date(iso + "T12:00:00").toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+
+  async function mark(p: P, status: "paid" | "cancelled") {
+    if (status === "cancelled" && !window.confirm("¿Anular este pago pendiente?")) return;
+    await sb
+      .from("membership_payments")
+      .update({ status, method: method[p.id] ?? "cash", paid_at: status === "paid" ? new Date().toISOString() : null })
+      .eq("id", p.id);
+    onChange();
+  }
+
+  return (
+    <div className="rounded-2xl border-2 border-ink bg-white p-5">
+      <h2 className="text-lg font-bold">Pendientes de pago ({list.length})</h2>
+      <p className="text-sm text-muted">Renovaciones y abonos hechos en la web. Márcalos cuando cobres.</p>
+      <ul className="mt-3 flex flex-col">
+        {list.map((p) => (
+          <li key={p.id} className="flex flex-wrap items-center gap-3 border-t border-line py-2.5 text-sm">
+            <span className="min-w-40 flex-1">
+              <b>{who(p.membership_id)}</b>
+              <span className="text-muted">
+                {" "}
+                · {p.period_end ? `${fmt(p.period_start)} – ${fmt(p.period_end)}` : fmt(p.period_start)}
+              </span>
+            </span>
+            <b>{formatPrice(p.amount_cents, studio.currency)}</b>
+            <select
+              value={method[p.id] ?? "cash"}
+              onChange={(e) => setMethod({ ...method, [p.id]: e.target.value })}
+              className="h-9 rounded-lg border border-line bg-white px-2"
+              aria-label="Forma de pago"
+            >
+              <option value="cash">Efectivo</option>
+              <option value="transfer">Transferencia</option>
+              <option value="other">Otro</option>
+            </select>
+            <button type="button" onClick={() => mark(p, "paid")} className="h-9 rounded-lg bg-ink px-3 font-bold text-white">
+              Pagado ✓
+            </button>
+            <button type="button" onClick={() => mark(p, "cancelled")} className="text-xs text-muted underline">
+              Anular
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
