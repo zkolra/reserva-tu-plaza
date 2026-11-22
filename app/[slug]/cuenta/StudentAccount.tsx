@@ -202,7 +202,7 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
         seriesId: ms.series_id,
         time: hhmm(c.start_time),
         name: c.name,
-        extra: [c.level, c.rooms?.name, ROLE[ms.role]].filter(Boolean).join(" · "),
+        extra: [c.level ? (/^[0-9]/.test(c.level) ? `Nivel ${c.level}` : c.level) : null, c.rooms?.name, ROLE[ms.role]].filter(Boolean).join(" · "),
       });
     }
     if (trial && trial.status !== "cancelled" && trial.class_date === date && trial.class_series)
