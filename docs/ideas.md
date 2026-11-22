@@ -33,3 +33,10 @@ más simple de clases en grupo; esto viene después.
 
 - Avisos al móvil: necesitan la app (PWA) con notificaciones push.
 - Los tres se apoyan en lo que ya existe: asistencia (0013), roles Leader/Follower y abonos por clase.
+
+## Rol «Ambos» (decidido, pendiente de hacer)
+- En «Mi cuenta» y al comprar: Leader, Follower o **Ambos**.
+- Si «Ambos»: elegir **rol preferido** («prefiero leader»). La plaza cuenta en el rol preferido.
+- No se elige rol en cada clase.
+- El profe ve «Ambos · prefiere leader» y sabe a quién pedir que cambie si falta pareja.
+- La escuela puede desactivar «Ambos».

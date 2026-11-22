@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { supabaseConfig } from "@/lib/config";
 import { cancelledEmail, sendEmailBatch } from "@/lib/email";
+import { sendPush, type PushSub } from "@/lib/push";
 
 // La escuela cancela una clase → avisamos por email a los apuntados ese día.
 // Todo se lee con la sesión de quien llama: solo el personal de la escuela ve la lista.
@@ -42,7 +43,21 @@ export async function POST(request: Request) {
         .map((r) => r.email!.toLowerCase()),
     ),
   ];
-  if (emails.length === 0) return Response.json({ sent: 0, reason: "nobody" });
+  // Push a los móviles con avisos activados
+  const { data: subs } = await sb.rpc("push_subs_for_class", { p_series: series, p_date: date });
+  const [py, pm, pd] = date.split("-").map(Number);
+  const pushLabel = new Date(Date.UTC(py, pm - 1, pd, 12)).toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+  const push = await sendPush(
+    (subs ?? []) as PushSub[],
+    {
+      title: `Clase cancelada: ${s.name as string}`,
+      body: `${pushLabel} a las ${(s.start_time as string).slice(0, 5)}${c.reason ? ` · ${c.reason as string}` : ""}`,
+      url: `${new URL(request.url).origin}/${studio.slug}/cuenta`,
+    },
+    sb,
+  );
+
+  if (emails.length === 0) return Response.json({ sent: 0, pushed: push.sent, reason: "nobody" });
 
   const [y, m, d] = date.split("-").map(Number);
   const dateLabel = new Date(Date.UTC(y, m - 1, d, 12)).toLocaleDateString("es-ES", {
@@ -64,5 +79,5 @@ export async function POST(request: Request) {
     studio.name,
     studio.contact_email,
   );
-  return Response.json(result);
+  return Response.json({ ...result, pushed: push.sent });
 }

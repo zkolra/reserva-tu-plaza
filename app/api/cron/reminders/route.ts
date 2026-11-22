@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { supabaseConfig } from "@/lib/config";
 import { formatPrice } from "@/lib/pricing";
 import { renewalReminderEmail, sendEmailBatch } from "@/lib/email";
+import { sendPush, type PushSub } from "@/lib/push";
 
 // Lo llama Supabase cada mañana (pg_cron + pg_net) con la cabecera x-cron-secret.
 // Envía «Tu abono termina el…» a quien termina en los próximos días y no renueva solo.
@@ -58,6 +59,25 @@ export async function POST(request: Request) {
     sent += res.sent;
     if (res.sent === mails.length) done.push(...list.map((r) => r.membership_id));
   }
+  // Push a quien tenga avisos activados
+  let pushed = 0;
+  if (rows.length) {
+    const { data: subs } = await sb.rpc("push_subs_for_memberships", { p_secret: secret, p_ids: rows.map((r) => r.membership_id) });
+    for (const r of rows) {
+      const mine = ((subs ?? []) as (PushSub & { membership_id: string })[]).filter((x) => x.membership_id === r.membership_id);
+      if (!mine.length) continue;
+      const res = await sendPush(
+        mine,
+        {
+          title: `Tu abono termina el ${fmt(r.ends_on, { day: "numeric", month: "long" })}`,
+          body: `${r.studio_name}: pulsa para renovarlo.`,
+          url: `${origin}/${r.studio_slug}/cuenta`,
+        },
+        sb,
+      );
+      pushed += res.sent;
+    }
+  }
   if (done.length) await sb.rpc("mark_reminded", { p_secret: secret, p_ids: done });
-  return Response.json({ due: rows.length, sent });
+  return Response.json({ due: rows.length, sent, pushed });
 }

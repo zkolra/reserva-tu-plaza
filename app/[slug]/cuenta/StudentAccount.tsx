@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import LoginForm from "@/app/admin/LoginForm";
 import PasswordBox from "@/components/PasswordBox";
 import InstallApp from "@/components/InstallApp";
+import PushToggle from "@/components/PushToggle";
 import { formatPrice } from "@/lib/pricing";
 import { formatDayLong, formatInTz, localDate } from "@/lib/private";
 import type { SupabaseConfig } from "@/lib/useAccount";
@@ -402,6 +403,7 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
       </section>
 
       <InstallApp hint="Tus clases, «Voy / No voy» y avisos de la escuela, en tu móvil." />
+      {sb && <PushToggle sb={sb} />}
 
       {/* ── Renovar / pagos pendientes ── */}
       {active && (myPending.length > 0 || canRenew) && (
