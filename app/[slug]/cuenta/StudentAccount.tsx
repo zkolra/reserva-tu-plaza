@@ -453,10 +453,13 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
           ) : (
             <ul className="mt-3 flex flex-col gap-2">
               {week.map((w, k) => (
-                <li key={k} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm ${w.cancelled ? "bg-accent-soft/50" : "bg-paper"}`}>
-                  <span className="w-28 shrink-0 font-bold sm:w-44">{cap(dayLabel(w.date))}</span>
-                  <span className="w-12 shrink-0 font-semibold">{w.time}</span>
-                  <span className="min-w-0">
+                <li
+                  key={k}
+                  className={`flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-3 py-3 text-sm sm:flex-nowrap ${w.cancelled ? "bg-accent-soft/50" : "bg-paper"}`}
+                >
+                  <span className="font-bold sm:w-44 sm:shrink-0">{cap(dayLabel(w.date))}</span>
+                  <span className="font-semibold sm:w-12 sm:shrink-0">{w.time}</span>
+                  <span className="min-w-0 basis-full sm:flex-1 sm:basis-auto">
                     <b>{w.name}</b>
                     {w.extra && <span className="text-muted"> · {w.extra}</span>}
                     {w.cancelled && (
@@ -464,7 +467,7 @@ export default function StudentAccount({ studio, cfg }: { studio: AccountStudio;
                     )}
                   </span>
                   {w.seriesId && !w.cancelled && (
-                    <span className="ml-auto flex shrink-0 gap-1" role="group" aria-label={`¿Vas a ${w.name}?`}>
+                    <span className="flex shrink-0 gap-1 sm:ml-auto" role="group" aria-label={`¿Vas a ${w.name}?`}>
                       {([true, false] as const).map((going) => {
                         const key = `${w.seriesId}|${w.date}`;
                         const on = rsvp[key] === going;
