@@ -28,12 +28,16 @@ begin
   insert into rooms (studio_id, name) values (v_studio, 'Sala Glow') returning id into v_glow;
   insert into rooms (studio_id, name) values (v_studio, 'Sala Vogue') returning id into v_vogue;
 
-  -- Precios conocidos: M2 60 €, M3 85 €, matrícula anual 20 €
-  if not exists (select 1 from plans where studio_id = v_studio) then
-    insert into plans (studio_id, kind, name, price_cents, classes_per_week, class_count, sort) values
-      (v_studio, 'monthly_by_classes', '2 clases por semana', 6000, 2, null, 2),
-      (v_studio, 'monthly_by_classes', '3 clases por semana', 8500, 3, null, 3);
-  end if;
+  -- Precios de su web: 1 modalidad 40 €, 2 → 60 €, 3 → 85 €, 4–5 → 99 €, Full pass 119 €, clase suelta 12 €
+  delete from plans where studio_id = v_studio and kind = 'monthly_by_classes';
+  insert into plans (studio_id, kind, name, price_cents, classes_per_week, class_count, sort) values
+    (v_studio, 'monthly_by_classes', '1 clase por semana',  4000, 1,    null, 1),
+    (v_studio, 'monthly_by_classes', '2 clases por semana', 6000, 2,    null, 2),
+    (v_studio, 'monthly_by_classes', '3 clases por semana', 8500, 3,    null, 3),
+    (v_studio, 'monthly_by_classes', '4 clases por semana', 9900, 4,    null, 4),
+    (v_studio, 'monthly_by_classes', '5 clases por semana', 9900, 5,    null, 5),
+    (v_studio, 'monthly_by_classes', 'Full pass',          11900, null, 6,    6);
+  update studios set single_class_cents = 1200 where id = v_studio;
 
   -- Horario semanal (se vuelve a crear entero)
   delete from class_series where studio_id = v_studio;
