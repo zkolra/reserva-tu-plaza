@@ -8,6 +8,7 @@ type PromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ 
 export default function InstallApp({ label = "Instala la app en tu móvil", hint }: { label?: string; hint?: string }) {
   const [prompt, setPrompt] = useState<PromptEvent | null>(null);
   const [ios, setIos] = useState(false);
+  const [android, setAndroid] = useState(false);
   const [installed, setInstalled] = useState(false);
   const [showIos, setShowIos] = useState(false);
 
@@ -16,6 +17,7 @@ export default function InstallApp({ label = "Instala la app en tu móvil", hint
       window.matchMedia("(display-mode: standalone)").matches || (navigator as { standalone?: boolean }).standalone === true;
     setInstalled(standalone);
     setIos(/iphone|ipad|ipod/i.test(navigator.userAgent));
+    setAndroid(/android/i.test(navigator.userAgent));
     const onPrompt = (e: Event) => {
       e.preventDefault();
       setPrompt(e as PromptEvent);
@@ -29,7 +31,8 @@ export default function InstallApp({ label = "Instala la app en tu móvil", hint
     };
   }, []);
 
-  if (installed || (!prompt && !ios)) return null;
+  // Siempre visible (salvo si ya se abre como app): si el navegador no ofrece el botón, explicamos cómo
+  if (installed) return null;
 
   return (
     <div className="flex flex-col gap-2 rounded-2xl border-2 border-dashed border-line bg-white p-4 text-sm">
@@ -51,7 +54,34 @@ export default function InstallApp({ label = "Instala la app en tu móvil", hint
           Instalar
         </button>
       </div>
-      {showIos && (
+      {showIos && !ios && (
+        <ol className="list-decimal pl-5 text-muted">
+          {android ? (
+            <>
+              <li>
+                Abre esta página en <b>Chrome</b>.
+              </li>
+              <li>
+                Pulsa el menú <b>⋮</b> (arriba a la derecha).
+              </li>
+              <li>
+                Elige <b>«Instalar aplicación»</b> o <b>«Añadir a pantalla de inicio»</b>.
+              </li>
+            </>
+          ) : (
+            <>
+              <li>
+                En el <b>móvil</b>: abre esta página y usa «Instalar aplicación» (Android, menú ⋮) o «Añadir a pantalla de inicio»
+                (iPhone, botón Compartir).
+              </li>
+              <li>
+                En el <b>ordenador</b> (Chrome o Edge): pulsa el icono de instalar ⊕ al final de la barra de direcciones.
+              </li>
+            </>
+          )}
+        </ol>
+      )}
+      {showIos && ios && (
         <ol className="list-decimal pl-5 text-muted">
           <li>
             Abre esta página en <b>Safari</b>.
