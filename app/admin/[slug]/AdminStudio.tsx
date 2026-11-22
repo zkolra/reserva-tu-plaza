@@ -148,28 +148,34 @@ export default function AdminStudio({
     >
       <nav
         aria-label="Menú del panel"
-        className="flex max-w-full flex-[1_1_220px] flex-col gap-1 bg-ink p-4 text-white"
+        className="flex w-full flex-col gap-1 bg-ink p-3 text-white sm:w-auto sm:max-w-full sm:flex-[1_1_220px] sm:p-4"
       >
-        <div className="flex items-center gap-2.5 px-2 pb-5 pt-2">
+        <div className="flex items-center gap-2.5 px-2 pb-2 pt-1 sm:pb-5 sm:pt-2">
           <StudioLogo name={studio.name} logoUrl={studio.logo_url} />
-          <div className="font-bold">{studio.name}</div>
-        </div>
-        {tabs.map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setTab(key)}
-            aria-current={tab === key ? "page" : undefined}
-            className={`flex h-11 items-center rounded-xl px-3 text-left text-sm ${
-              tab === key
-                ? "bg-white/15 font-bold"
-                : "font-semibold text-white/75 hover:text-white"
-            }`}
-          >
-            {label}
+          <div className="min-w-0 flex-1 truncate font-bold">{studio.name}</div>
+          <button type="button" className="text-xs text-white/70 underline sm:hidden" onClick={() => sb.auth.signOut()}>
+            Salir
           </button>
-        ))}
-        <div className="mt-auto flex flex-col gap-2 px-2 pt-6 text-xs text-white/70">
+        </div>
+        {/* En el móvil, las secciones van en una fila que se desliza */}
+        <div className="-mx-3 flex gap-1 overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-col sm:overflow-visible sm:px-0 sm:pb-0">
+          {tabs.map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              aria-current={tab === key ? "page" : undefined}
+              className={`flex h-10 shrink-0 items-center rounded-xl px-3 text-left text-sm sm:h-11 ${
+                tab === key
+                  ? "bg-white/15 font-bold"
+                  : "font-semibold text-white/75 hover:text-white"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="mt-auto hidden flex-col gap-2 px-2 pt-6 text-xs text-white/70 sm:flex">
           <Link href={`/${studio.slug}`} className="underline" target="_blank">
             Ver horario público ↗
           </Link>
@@ -184,7 +190,7 @@ export default function AdminStudio({
         </div>
       </nav>
 
-      <main className="min-w-0 flex-[999_1_560px] p-5 sm:p-8">
+      <main className="min-w-0 flex-[999_1_560px] p-4 sm:p-8">
         {tab === "asistencia" && <Attendance sb={sb} studio={studio} />}
         {tab === "alumnos" && <Students sb={sb} studio={studio} />}
         {tab === "clases" && <Classes sb={sb} studio={studio} />}

@@ -251,7 +251,7 @@ export default function Attendance({ sb, studio }: { sb: SupabaseClient; studio:
                   type="button"
                   aria-expanded={isOpen}
                   onClick={() => setOpen(isOpen ? null : s.id)}
-                  className="flex w-full flex-wrap items-center gap-x-6 gap-y-2 p-4 text-left hover:bg-paper"
+                  className="flex w-full flex-wrap items-center gap-x-3 gap-y-2 p-4 text-left hover:bg-paper sm:gap-x-6"
                 >
                   <span className={`w-14 text-lg font-bold ${cancelled ? "line-through" : ""}`}>{hhmm(s.start_time)}</span>
                   <span className="min-w-0 flex-1">

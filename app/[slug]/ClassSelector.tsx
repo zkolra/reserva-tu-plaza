@@ -230,6 +230,10 @@ export default function ClassSelector({
     [series],
   );
   const tiers = useMemo(() => monthlyTiers(plans), [plans]);
+  // Móvil: un día cada vez (pestañas), empezando por hoy si hay clases
+  const [mobileDay, setMobileDay] = useState<number | null>(null);
+  const todayDow = ((new Date().getDay() + 6) % 7) + 1;
+  const shownDay = mobileDay ?? (days.includes(todayDow) ? todayDow : days[0]);
   const trial = plans.find((p) => p.kind === "trial");
 
   const byId = (id: string) => series.find((s) => s.id === id) as ClassSeries;
@@ -283,7 +287,7 @@ export default function ClassSelector({
                           type="button"
                           aria-pressed="true"
                           onClick={() => toggle(s)}
-                          className="flex min-h-[118px] flex-col gap-1 rounded-2xl border-2 border-ink bg-ink p-3 text-left text-white"
+                          className="flex sm:min-h-[118px] flex-col gap-1 rounded-2xl border-2 border-ink bg-ink p-3 text-left text-white"
                         >
                           <span className="text-xs font-bold text-accent-soft">
                             ✓ Elegida
@@ -303,7 +307,7 @@ export default function ClassSelector({
                           key={s.id}
                           type="button"
                           disabled
-                          className="flex min-h-[118px] flex-col gap-1 rounded-2xl border border-line bg-paper p-3 text-left text-muted"
+                          className="flex sm:min-h-[118px] flex-col gap-1 rounded-2xl border border-line bg-paper p-3 text-left text-muted"
                         >
                           <span className="text-sm font-bold">{s.name}</span>
                           <span className="text-xs">{meta}</span>
@@ -329,7 +333,7 @@ export default function ClassSelector({
                         type="button"
                         aria-pressed="false"
                         onClick={() => toggle(s)}
-                        className="flex min-h-[118px] flex-col gap-1 rounded-2xl border border-line bg-white p-3 text-left hover:border-ink"
+                        className="flex sm:min-h-[118px] flex-col gap-1 rounded-2xl border border-line bg-white p-3 text-left hover:border-ink"
                       >
                         <span className="text-sm font-bold">{s.name}</span>
                         <span className="text-xs text-muted">{meta}</span>
@@ -355,7 +359,7 @@ export default function ClassSelector({
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-7xl px-4 pb-28 pt-8 sm:px-6 sm:pb-8">
       <h1 className="font-display text-3xl font-bold sm:text-4xl">
         {purpose === "trial" ? "Elige tu clase de prueba" : "Elige tus clases"}
       </h1>
@@ -449,9 +453,51 @@ export default function ClassSelector({
       </div>
 
       <div className="mt-6 flex flex-wrap items-start gap-6">
+        {/* ── Móvil: pestañas de días + lista ── */}
+        <section aria-label="Horario" className="w-full min-w-0 sm:hidden">
+          <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-2" role="tablist" aria-label="Día">
+            {days.map((d) => {
+              const count = series.filter((x) => x.weekday === d && selected.includes(x.id)).length;
+              const on = d === shownDay;
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  role="tab"
+                  aria-selected={on}
+                  onClick={() => setMobileDay(d)}
+                  className={`relative flex h-12 shrink-0 flex-col items-center justify-center rounded-xl px-4 text-sm font-bold ${
+                    on ? "bg-ink text-white" : "border border-line bg-white text-ink"
+                  }`}
+                >
+                  {(DAY_NAMES.at(d - 1) ?? "").slice(0, 3)}
+                  {count > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1 text-[11px] text-on-accent">
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-3 flex flex-col gap-4">
+            {times
+              .filter((t) => series.some((x) => x.weekday === shownDay && hhmm(x.start_time) === t))
+              .map((t) => (
+                <div key={t} className="flex flex-col gap-2">
+                  <div className="text-sm font-bold text-muted">{t}</div>
+                  {series
+                    .filter((x) => x.weekday === shownDay && hhmm(x.start_time) === t)
+                    .sort((a, b) => roomName(a).localeCompare(roomName(b)) || a.name.localeCompare(b.name))
+                    .map(renderCard)}
+                </div>
+              ))}
+          </div>
+        </section>
+
         <section
           aria-label="Horario semanal"
-          className="min-w-0 flex-[3_1_640px] rounded-3xl bg-white p-4"
+          className="hidden min-w-0 flex-[3_1_640px] rounded-3xl bg-white p-4 sm:block"
         >
           <div className="overflow-x-auto">
             <div className="flex min-w-[720px] flex-col gap-2">
@@ -629,8 +675,9 @@ export default function ClassSelector({
           </aside>
         ) : (
           <aside
+            id="mi-abono"
             aria-label="Tu abono"
-            className="flex min-w-0 flex-[1_1_300px] flex-col gap-4 rounded-3xl bg-white p-5"
+            className="flex w-full min-w-0 scroll-mt-4 flex-col gap-4 rounded-3xl bg-white p-5 sm:w-auto sm:flex-[1_1_300px]"
           >
             <h2 className="font-display text-xl font-bold">Tu abono mensual</h2>
 
@@ -980,6 +1027,28 @@ export default function ClassSelector({
               </p>
             )}
           </aside>
+        )}
+
+        {purpose === "abono" && n > 0 && step !== "done" && (
+          <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-white/95 px-4 py-3 backdrop-blur sm:hidden">
+            <div className="mx-auto flex max-w-md items-center justify-between gap-3">
+              <span className="text-sm">
+                <b>
+                  {n} {n === 1 ? "clase" : "clases"}
+                </b>
+                {tier && (
+                  <span className="text-muted">
+                    {" "}
+                    · {formatPrice(payNow ?? tier.plan.price_cents, studio.currency)}
+                    {payNow !== null && quote && payNow !== quote.monthly_cents ? " este mes" : "/mes"}
+                  </span>
+                )}
+              </span>
+              <a href="#mi-abono" className="flex h-11 items-center rounded-xl bg-accent px-4 text-sm font-bold text-on-accent">
+                Ver mi abono ↓
+              </a>
+            </div>
+          </div>
         )}
       </div>
     </div>
